@@ -173,8 +173,8 @@ class KnowledgePipeline:
         }
         merged = rrf_merge(multi_results, weights=weights, k=60)
 
-        builder = ContextBuilder(max_tokens=plan.max_token_budget)
-        blocks = builder.build(merged[:plan.max_results])
+        builder = ContextBuilder()
+        blocks = builder.build(merged[:plan.max_results], token_budget=plan.max_token_budget)
 
         adapter = get_adapter(model)
         relationships = self._extract_relationships_from_results(multi_results)
