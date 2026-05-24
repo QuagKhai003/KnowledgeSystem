@@ -11,8 +11,11 @@ from src.pipeline import KnowledgePipeline
 
 
 def main():
-    config_path = Path(__file__).parent.parent / "config" / "settings.yaml"
+    project_root = Path(__file__).resolve().parent.parent
+    config_path = project_root / "config" / "settings.yaml"
     config = yaml.safe_load(config_path.read_text())
+    if config["workspace"]["root"] == "auto":
+        config["workspace"]["root"] = str(project_root)
     root = Path(config["workspace"]["root"])
 
     # Wipe state DB to force full rescan

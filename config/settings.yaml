@@ -1,5 +1,5 @@
 workspace:
-  root: /mnt/c/Users/quang/Code/KnowledgeSystem
+  root: auto
   state_db: data/.knowledge_state.db
   cache_dir: data/cache
   ignore_file: config/.knowledgeignore
