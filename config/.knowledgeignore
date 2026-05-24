@@ -1,0 +1,48 @@
+# Version control
+.git/
+
+# Obsidian internals
+.obsidian/
+
+# Build artifacts
+build/
+dist/
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Knowledge OS internals
+blueprint/
+data/
+docker/
+scripts/
+tests/
+.knowledge_state.db
+
+# Binary files (except PDF)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.ico
+*.svg
+*.mp3
+*.mp4
+*.wav
+*.avi
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+*.exe
+*.dll
+*.so
+*.dylib

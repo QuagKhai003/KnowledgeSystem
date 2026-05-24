@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Data & caches
+data/
+*.db
+
+# Coverage
+.coverage
+htmlcov/
+
+# Obsidian
+.obsidian/
+
+# Misc tooling
+.antigravitycli/
+
+# Project specs (personal reference, not source)
+PROJECT.md
+blueprint/
+knowledge_os_ai_agent_system_prompt_spec_v_1.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+docker/volumes/
