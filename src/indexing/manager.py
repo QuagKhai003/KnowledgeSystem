@@ -13,11 +13,39 @@ class IndexManager:
         qdrant=None,
         opensearch=None,
         neo4j=None,
+        config: dict | None = None,
     ):
         self.embedder = embedding_model
         self.qdrant = qdrant
         self.opensearch = opensearch
         self.neo4j = neo4j
+
+        if config and not any([qdrant, opensearch, neo4j]):
+            self._connect_from_config(config)
+
+    def _connect_from_config(self, config: dict):
+        from .qdrant_client import QdrantIndex
+        from .opensearch_cli import OpenSearchIndex
+        from .neo4j_client import Neo4jClient
+
+        db = config.get("databases", {})
+        try:
+            q = db["qdrant"]
+            self.qdrant = QdrantIndex(host=q["host"], port=q["port"])
+        except Exception:
+            pass
+        try:
+            o = db["opensearch"]
+            self.opensearch = OpenSearchIndex(host=o["host"], port=o["port"])
+        except Exception:
+            pass
+        try:
+            n = db["neo4j"]
+            self.neo4j = Neo4jClient(uri=n["uri"], user=n["user"], password=n["password"])
+        except Exception:
+            pass
+        if not self.embedder:
+            self.embedder = EmbeddingModel()
 
     def index_object(self, obj: KnowledgeObject) -> dict:
         """Index a single Knowledge Object across all available stores.

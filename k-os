@@ -70,6 +70,75 @@ def cmd_parse(args):
     print(json.dumps(result, indent=2, default=str))
 
 
+def cmd_compile(args):
+    """Scan, parse, and compile into Knowledge Objects."""
+    from src.pipeline import KnowledgePipeline
+
+    config = load_config()
+    pipeline = KnowledgePipeline(config)
+
+    print("Scanning...")
+    scan_results = pipeline.scan_and_parse(verbose=args.verbose)
+    print(f"  {len(scan_results)} files found")
+
+    print("Compiling...")
+    objects = pipeline.compile(scan_results, verbose=args.verbose)
+    print(f"  {len(objects)} knowledge objects compiled")
+
+    if args.json:
+        output = [obj.to_dict() for obj in objects]
+        print(json.dumps(output, indent=2, default=str))
+    else:
+        for obj in objects:
+            print(f"  [{obj.ontology_class}] {obj.name} ({obj.id})")
+
+
+def cmd_index(args):
+    """Compile and index all objects into databases."""
+    from src.pipeline import KnowledgePipeline
+
+    config = load_config()
+    pipeline = KnowledgePipeline(config)
+
+    print("Scanning and parsing...")
+    scan_results = pipeline.scan_and_parse(verbose=args.verbose)
+
+    print("Compiling...")
+    objects = pipeline.compile(scan_results, verbose=args.verbose)
+    print(f"  {len(objects)} knowledge objects ready")
+
+    print("Indexing into databases...")
+    stats = pipeline.index(objects, verbose=args.verbose)
+    print(f"  Indexed: {stats['indexed']}")
+    print(f"  Failed:  {stats['failed']}")
+    if stats["errors"]:
+        for err in stats["errors"][:5]:
+            print(f"    {err}")
+
+
+def cmd_rebuild(args):
+    """Full rebuild: wipe state and re-index everything."""
+    from src.pipeline import KnowledgePipeline
+
+    config = load_config()
+    root = Path(config["workspace"]["root"])
+    state_db_path = root / config["workspace"]["state_db"]
+
+    if state_db_path.exists():
+        state_db_path.unlink()
+        print("State DB wiped.")
+
+    pipeline = KnowledgePipeline(config)
+    result = pipeline.full_rebuild(verbose=args.verbose)
+
+    print(f"\n=== Rebuild Complete ===")
+    print(f"  Files scanned:    {result['files_scanned']}")
+    print(f"  Objects compiled: {result['objects_compiled']}")
+    print(f"  Objects indexed:  {result['objects_indexed']}")
+    print(f"  Index failures:   {result['index_failures']}")
+    print(f"  Time:             {result['elapsed_seconds']}s")
+
+
 def cmd_status(args):
     """Show state database summary."""
     config = load_config()
@@ -94,18 +163,18 @@ def cmd_status(args):
 
 
 def cmd_query(args):
-    """Run a full query through the planner and retrieval pipeline."""
+    """Plan and execute a knowledge query with live retrieval."""
     from src.planner import QueryPlanner
     from src.adapters import get_adapter
 
     planner = QueryPlanner()
-    result = planner.plan_with_metadata(args.query, target_model=args.model)
+    metadata = planner.plan_with_metadata(args.query, target_model=args.model)
 
-    print(f"Query:  {result['query']}")
-    print(f"Intent: {result['intent']} (confidence: {result['confidence']:.0%})")
-    print(f"Model:  {result['target_model']}")
+    print(f"Query:  {metadata['query']}")
+    print(f"Intent: {metadata['intent']} (confidence: {metadata['confidence']:.0%})")
+    print(f"Model:  {metadata['target_model']}")
+    plan = metadata["plan"]
     print(f"Plan:")
-    plan = result["plan"]
     print(f"  Dense: {'ON' if plan['dense_vector'] else 'OFF'} (weight={plan['weights']['dense']})")
     print(f"  Sparse: {'ON' if plan['sparse_keyword'] else 'OFF'} (weight={plan['weights']['sparse']})")
     print(f"  Graph: hops={plan['graph_max_hops']}")
@@ -114,8 +183,21 @@ def cmd_query(args):
     if plan["force_exact_matches"]:
         print(f"  Exact matches: {plan['force_exact_matches']}")
 
+    if args.live:
+        from src.pipeline import KnowledgePipeline
+        config = load_config()
+        pipeline = KnowledgePipeline(config)
+        print("\nExecuting retrieval...")
+        try:
+            context = pipeline.query(args.query, model=args.model, verbose=args.verbose)
+            print(f"\n--- Context ({len(context)} chars) ---\n")
+            print(context)
+        except Exception as e:
+            print(f"\nRetrieval failed: {e}")
+            print("Are databases running? Try: ./scripts/db_setup.sh")
+
     if args.json:
-        print(json.dumps(result, indent=2))
+        print(json.dumps(metadata, indent=2))
 
 
 def main():
@@ -125,29 +207,53 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command")
 
+    # scan
     scan_p = subparsers.add_parser("scan", help="Scan workspace for changes")
     scan_p.add_argument("-v", "--verbose", action="store_true")
     scan_p.add_argument("--json", action="store_true", help="Output JSON results")
 
+    # parse
     parse_p = subparsers.add_parser("parse", help="Parse a single file")
     parse_p.add_argument("file", help="Path to file to parse")
 
+    # compile
+    compile_p = subparsers.add_parser("compile", help="Compile files into Knowledge Objects")
+    compile_p.add_argument("-v", "--verbose", action="store_true")
+    compile_p.add_argument("--json", action="store_true", help="Output objects as JSON")
+
+    # index
+    index_p = subparsers.add_parser("index", help="Compile and index into databases")
+    index_p.add_argument("-v", "--verbose", action="store_true")
+
+    # rebuild
+    rebuild_p = subparsers.add_parser("rebuild", help="Full rebuild from scratch")
+    rebuild_p.add_argument("-v", "--verbose", action="store_true")
+
+    # status
     subparsers.add_parser("status", help="Show state database summary")
 
+    # query
     query_p = subparsers.add_parser("query", help="Plan and execute a knowledge query")
     query_p.add_argument("query", help="Natural language query")
-    query_p.add_argument("-m", "--model", default="default", help="Target model (claude/gpt/codex/qwen)")
+    query_p.add_argument("-m", "--model", default="default", help="Target model (claude/gpt/gpt5/codex/qwen/gemini)")
     query_p.add_argument("--json", action="store_true", help="Output full plan as JSON")
+    query_p.add_argument("--live", action="store_true", help="Execute retrieval against databases")
+    query_p.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args()
-    if args.command == "scan":
-        cmd_scan(args)
-    elif args.command == "parse":
-        cmd_parse(args)
-    elif args.command == "status":
-        cmd_status(args)
-    elif args.command == "query":
-        cmd_query(args)
+    commands = {
+        "scan": cmd_scan,
+        "parse": cmd_parse,
+        "compile": cmd_compile,
+        "index": cmd_index,
+        "rebuild": cmd_rebuild,
+        "status": cmd_status,
+        "query": cmd_query,
+    }
+
+    handler = commands.get(args.command)
+    if handler:
+        handler(args)
     else:
         parser.print_help()
 
