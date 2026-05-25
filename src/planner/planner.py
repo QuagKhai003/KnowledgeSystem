@@ -85,6 +85,10 @@ class QueryPlanner:
         classified = self.classifier.classify(query)
         exact_targets = self.classifier.detect_exact_targets(query)
         routing = INTENT_ROUTING[classified.intent]
+
+        if target_model in ("auto", "default"):
+            from src.adapters.base_adapter import detect_cli
+            target_model = detect_cli()
         budget = TOKEN_BUDGETS.get(target_model, TOKEN_BUDGETS["default"])
 
         return SearchPlan(

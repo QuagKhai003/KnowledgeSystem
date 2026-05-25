@@ -21,12 +21,56 @@ class BaseAdapter(ABC):
         return max(1, len(text) // 4)
 
 
+def detect_cli() -> str:
+    """Detect which AI CLI is currently running based on environment."""
+    import os
+
+    # Claude Code sets CLAUDE_CODE or runs as 'claude'
+    if os.environ.get("CLAUDE_CODE") or os.environ.get("CLAUDE_ACCESS_TOKEN"):
+        return "claude"
+
+    # OpenAI Codex CLI
+    if os.environ.get("CODEX_CLI") or os.environ.get("OPENAI_API_KEY"):
+        return "codex"
+
+    # Google Gemini / Antigravity
+    if os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"):
+        return "gemini"
+
+    # Qwen
+    if os.environ.get("DASHSCOPE_API_KEY"):
+        return "qwen"
+
+    # Check parent process name as fallback
+    try:
+        import psutil
+        parent = psutil.Process(os.getppid()).name().lower()
+        if "claude" in parent:
+            return "claude"
+        if "cursor" in parent or "windsurf" in parent:
+            return "claude"
+        if "codex" in parent:
+            return "codex"
+    except Exception:
+        pass
+
+    # Check if running inside an MCP call (set by mcp_server.py)
+    mcp_model = os.environ.get("KOS_MCP_MODEL")
+    if mcp_model:
+        return mcp_model
+
+    return "default"
+
+
 def get_adapter(model: str) -> "BaseAdapter":
     from .claude import ClaudeAdapter
     from .gpt import GPTAdapter
     from .codex import CodexAdapter
     from .qwen import QwenAdapter
     from .gemini import GeminiAdapter
+
+    if model == "default" or model == "auto":
+        model = detect_cli()
 
     adapters = {
         "claude": ClaudeAdapter(),

@@ -136,12 +136,12 @@ Usage: /k-os <query>
 
 Execute the query by running:
 ```
-k-os query "$ARGUMENTS" -m claude --live
+k-os query "$ARGUMENTS" --live
 ```
 
 If that fails (k-os not in PATH), try:
 ```
-$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/k-os query "$ARGUMENTS" -m claude --live
+$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/k-os query "$ARGUMENTS" --live
 ```
 
 Show the results to the user. If databases aren't running, suggest: `docker compose -f $INSTALL_DIR/docker/docker-compose.yml up -d`

@@ -190,9 +190,12 @@ def cmd_query(args):
     planner = QueryPlanner()
     metadata = planner.plan_with_metadata(args.query, target_model=args.model)
 
+    from src.adapters.base_adapter import detect_cli
+    resolved = detect_cli() if args.model in ("auto", "default") else args.model
+
     print(f"Query:  {metadata['query']}")
     print(f"Intent: {metadata['intent']} (confidence: {metadata['confidence']:.0%})")
-    print(f"Model:  {metadata['target_model']}")
+    print(f"Adapter: {resolved}" + (" (auto-detected)" if args.model in ("auto", "default") else ""))
     plan = metadata["plan"]
     print(f"Plan:")
     print(f"  Dense: {'ON' if plan['dense_vector'] else 'OFF'} (weight={plan['weights']['dense']})")
@@ -299,7 +302,7 @@ def main():
     # query
     query_p = subparsers.add_parser("query", help="Plan and execute a knowledge query")
     query_p.add_argument("query", help="Natural language query")
-    query_p.add_argument("-m", "--model", default="default", help="Target model (claude/gpt/gpt5/codex/qwen/gemini)")
+    query_p.add_argument("-m", "--model", default="auto", help="Output adapter (auto/claude/gpt/codex/qwen/gemini). Default: auto-detect from AI CLI")
     query_p.add_argument("--json", action="store_true", help="Output full plan as JSON")
     query_p.add_argument("--live", action="store_true", help="Execute retrieval against databases")
     query_p.add_argument("-v", "--verbose", action="store_true")

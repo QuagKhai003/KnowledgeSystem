@@ -95,15 +95,15 @@ MCP exposes 5 tools: `k-os-query`, `k-os-scan`, `k-os-compile`, `k-os-rebuild`, 
 
 ## Output Adapters
 
-When context is retrieved, it is formatted differently depending on which AI model will consume it:
+The adapter is **auto-detected** based on which AI CLI you're using — no `-m` flag needed. You can still override manually with `-m claude`, `-m codex`, etc.
 
-| Adapter | Format | Context Budget |
-|---------|--------|---------------|
-| Claude (`-m claude`) | XML with ontology hierarchy | 150,000 tokens |
-| GPT (`-m gpt`) | Structured Markdown | 8,000 tokens |
-| Codex (`-m codex`) | Minimal comments + raw code | 8,000 tokens |
-| Qwen (`-m qwen`) | Compact JSON | 32,000 tokens |
-| Gemini (`-m gemini`) | Markdown with tables | 128,000 tokens |
+| Adapter | Auto-detected when | Format | Context Budget |
+|---------|-------------------|--------|---------------|
+| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` set | XML with ontology hierarchy | 150,000 tokens |
+| Codex | `OPENAI_API_KEY` set | Minimal comments + raw code | 8,000 tokens |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` set | Markdown with tables | 128,000 tokens |
+| Qwen | `DASHSCOPE_API_KEY` set | Compact JSON | 32,000 tokens |
+| GPT | Default fallback | Structured Markdown | 8,000 tokens |
 
 These are **not** models that Knowledge OS runs. They control how retrieved context is formatted before being passed to your AI CLI. No API keys or LLMs are needed.
 

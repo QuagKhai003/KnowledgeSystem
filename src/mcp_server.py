@@ -142,7 +142,7 @@ def handle_query(params: dict) -> str:
 
     query = str(params["query"])[:10000]
     config = _load_project_config(params.get("workspace"))
-    model = params.get("model", "claude")
+    model = params.get("model", "auto")
 
     from src.pipeline import KnowledgePipeline
     pipeline = KnowledgePipeline(config)
