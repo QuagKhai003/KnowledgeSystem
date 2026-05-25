@@ -1,7 +1,6 @@
-"""Base adapter interface for model-specific context formatting."""
+"""Base adapter interface for model-specific pointer formatting."""
 
 from abc import ABC, abstractmethod
-from src.retrieval.context_builder import ContextBlock
 
 
 class BaseAdapter(ABC):
@@ -10,11 +9,6 @@ class BaseAdapter(ABC):
     @property
     @abstractmethod
     def model_name(self) -> str:
-        ...
-
-    @abstractmethod
-    def format(self, blocks: list[ContextBlock], query: str, relationships: list[dict] | None = None) -> str:
-        """Format context blocks into model-specific prompt context."""
         ...
 
     def format_pointers(self, pointers: list[dict], query: str) -> str:

@@ -1,1 +1,1 @@
-from .manager import IndexManager
+from .fts_index import FTSIndex

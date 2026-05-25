@@ -137,8 +137,8 @@ Adapters control how file pointers are formatted for each AI CLI. Knowledge OS d
 | Compilation | Knowledge Object construction with formal ontology (10 classes, 7 predicates) |
 | Abstraction | Four-level hierarchy: L0 (raw) → L1 (outline) → L2 (summary) → L3 (keywords) |
 | Indexing | SQLite FTS5 (default) with optional Qdrant vector and Neo4j graph indexes |
-| Retrieval | Search coordination, RRF reranking, BM25-ranked file pointers |
-| Adapters | Output formatting tailored to target AI CLI |
+| Query | BM25-ranked file pointers with matched terms, sections, and relevance scores |
+| Adapters | Pointer formatting tailored to target AI CLI |
 
 ## Project Structure
 
@@ -151,8 +151,6 @@ src/
 │   └── parsers/        Markdown, code AST, and PDF parsers
 ├── compiler/           Knowledge Object compilation and ontology validation
 ├── indexing/           SQLite FTS5, Qdrant, and Neo4j clients
-├── retrieval/          Search coordination, RRF reranking, context building
-├── planner/            Intent classification and query planning
 ├── adapters/           Output formatters (Claude, GPT, Codex, Qwen, Gemini)
 ├── pipeline.py         End-to-end orchestrator
 └── mcp_server.py       MCP server for AI CLI integration

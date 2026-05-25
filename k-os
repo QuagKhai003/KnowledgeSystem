@@ -9,10 +9,6 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from src.ingestion.scanner import Scanner
-from src.ingestion.state_db import StateDB
-from src.ingestion.parsers import parse_file
-
 
 def load_global_config() -> dict:
     """Load global config from ~/.k-os/config.yaml if it exists."""
@@ -56,6 +52,10 @@ def load_config(workspace: str | None = None) -> dict:
 
 def cmd_scan(args):
     """Run incremental scan and parse changed files."""
+    from src.ingestion.scanner import Scanner
+    from src.ingestion.state_db import StateDB
+    from src.ingestion.parsers import parse_file
+
     config = load_config(args.workspace)
     root = Path(config["workspace"]["root"])
     db_path = root / config["workspace"]["state_db"]
@@ -95,6 +95,8 @@ def cmd_parse(args):
         sys.exit(1)
 
     from src.ingestion.scanner import EXTENSION_MAP
+    from src.ingestion.parsers import parse_file
+
     file_type = EXTENSION_MAP.get(path.suffix.lower())
     if not file_type:
         print(f"Error: unsupported extension {path.suffix}", file=sys.stderr)
@@ -290,7 +292,6 @@ def main():
     query_p = subparsers.add_parser("query", help="Search knowledge index and return file pointers")
     query_p.add_argument("query", help="Natural language query")
     query_p.add_argument("-m", "--model", default="auto", help="Output adapter (auto/claude/gpt/codex/qwen/gemini). Default: auto-detect from AI CLI")
-    query_p.add_argument("--live", action="store_true", help="(kept for backwards compatibility)")
     query_p.add_argument("-v", "--verbose", action="store_true")
 
     # mcp
