@@ -14,19 +14,21 @@ from src.ingestion.state_db import StateDB
 from src.ingestion.parsers import parse_file
 
 
-def load_config() -> dict:
+def load_config(workspace: str | None = None) -> dict:
     import yaml
     project_root = Path(__file__).resolve().parent
     config_path = project_root / "config" / "settings.yaml"
     config = yaml.safe_load(config_path.read_text())
-    if config["workspace"]["root"] == "auto":
+    if workspace:
+        config["workspace"]["root"] = str(Path(workspace).resolve())
+    elif config["workspace"]["root"] == "auto":
         config["workspace"]["root"] = str(project_root)
     return config
 
 
 def cmd_scan(args):
     """Run incremental scan and parse changed files."""
-    config = load_config()
+    config = load_config(args.workspace)
     root = Path(config["workspace"]["root"])
     db_path = root / config["workspace"]["state_db"]
     ignore_file = root / config["workspace"]["ignore_file"]
@@ -78,7 +80,7 @@ def cmd_compile(args):
     """Scan, parse, and compile into Knowledge Objects."""
     from src.pipeline import KnowledgePipeline
 
-    config = load_config()
+    config = load_config(args.workspace)
     pipeline = KnowledgePipeline(config)
 
     print("Scanning...")
@@ -101,7 +103,7 @@ def cmd_index(args):
     """Compile and index all objects into databases."""
     from src.pipeline import KnowledgePipeline
 
-    config = load_config()
+    config = load_config(args.workspace)
     pipeline = KnowledgePipeline(config)
 
     print("Scanning and parsing...")
@@ -124,7 +126,7 @@ def cmd_rebuild(args):
     """Full rebuild: wipe state and re-index everything."""
     from src.pipeline import KnowledgePipeline
 
-    config = load_config()
+    config = load_config(args.workspace)
     root = Path(config["workspace"]["root"])
     state_db_path = root / config["workspace"]["state_db"]
 
@@ -145,7 +147,7 @@ def cmd_rebuild(args):
 
 def cmd_status(args):
     """Show state database summary."""
-    config = load_config()
+    config = load_config(args.workspace)
     root = Path(config["workspace"]["root"])
     db_path = root / config["workspace"]["state_db"]
 
@@ -189,7 +191,7 @@ def cmd_query(args):
 
     if args.live:
         from src.pipeline import KnowledgePipeline
-        config = load_config()
+        config = load_config(args.workspace)
         pipeline = KnowledgePipeline(config)
         print("\nExecuting retrieval...")
         try:
@@ -209,6 +211,7 @@ def main():
         prog="k-os",
         description="Knowledge OS — local knowledge compilation engine"
     )
+    parser.add_argument("-w", "--workspace", default=None, help="Path to workspace/vault to scan (default: project root)")
     subparsers = parser.add_subparsers(dest="command")
 
     # scan
