@@ -142,8 +142,9 @@ class KnowledgePipeline:
         return objects
 
     def index(self, objects: list[KnowledgeObject], verbose: bool = False) -> dict:
-        """Phase 3: Index Knowledge Objects into all databases."""
+        """Phase 3: Index Knowledge Objects into all databases + local store."""
         stats = {"indexed": 0, "failed": 0, "errors": []}
+        state_db = StateDB(self.db_path)
 
         for obj in objects:
             try:
@@ -152,20 +153,31 @@ class KnowledgePipeline:
                     stats["indexed"] += 1
                 else:
                     stats["failed"] += 1
+                state_db.store_knowledge_object(
+                    obj.id, obj.name,
+                    obj.abstractions.level_0,
+                    obj.abstractions.level_1,
+                    obj.abstractions.level_2,
+                    obj.abstractions.level_3,
+                )
             except Exception as e:
                 stats["failed"] += 1
                 stats["errors"].append(f"{obj.id}: {e}")
                 if verbose:
                     print(f"  ERROR indexing {obj.id}: {e}")
 
+        state_db.commit()
+        state_db.close()
         return stats
 
     def query(self, query_text: str, model: str = "default", verbose: bool = False) -> str:
-        """Phase 4: Plan, retrieve, and format context for a query."""
+        """Two-phase retrieval: locate documents, then extract relevant passages."""
         from src.retrieval.rerank import rrf_merge
+        from src.retrieval.passage_extractor import extract_passages, Passage
 
         plan = self.planner.plan(query_text, target_model=model)
 
+        # Phase 1: Locate — search L2/L3 across all databases to find relevant documents
         multi_results = self.retrieval.execute(plan)
 
         weights = {
@@ -174,9 +186,45 @@ class KnowledgePipeline:
             "graph": plan.graph_weight,
         }
         merged = rrf_merge(multi_results, weights=weights, k=60)
+        top_ids = [r.id for r in merged[:plan.max_results]]
+
+        # Phase 2: Extract — fetch L0/L1 from local store and extract relevant passages
+        state_db = StateDB(self.db_path)
+        ko_store = state_db.get_knowledge_objects_batch(top_ids)
+        state_db.close()
 
         builder = ContextBuilder()
-        blocks = builder.build(merged[:plan.max_results], token_budget=plan.max_token_budget)
+        blocks = []
+
+        for result in merged[:plan.max_results]:
+            ko = ko_store.get(result.id)
+            if ko and ko["level_0"]:
+                passages = extract_passages(
+                    query=query_text,
+                    level_0=ko["level_0"],
+                    level_1=ko["level_1"],
+                    max_passages=3,
+                    passage_window=800,
+                )
+                if passages:
+                    content = "\n\n".join(
+                        f"[{p.section}]\n{p.text}" for p in passages
+                    )
+                    from src.retrieval.context_builder import ContextBlock
+                    blocks.append(ContextBlock(
+                        id=result.id,
+                        title=ko["name"],
+                        content=content,
+                        abstraction_level=0,
+                        sources=result.sources,
+                    ))
+                    continue
+
+            block = builder._build_block(result, result.payload, ["level_2", "level_3"])
+            if block:
+                blocks.append(block)
+
+        blocks = builder._fit_to_budget(blocks, plan.max_token_budget)
 
         adapter = get_adapter(model)
         relationships = self._extract_relationships_from_results(multi_results)
