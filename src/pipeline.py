@@ -1,17 +1,7 @@
 """Full pipeline orchestrator: scan → parse → compile → index → query (pointers)."""
 
-import json
 import time
 from pathlib import Path
-
-from src.ingestion.scanner import Scanner
-from src.ingestion.state_db import StateDB
-from src.ingestion.parsers import parse_file
-from src.compiler.pipeline import CompilerPipeline
-from src.compiler.ontology_val import OntologyValidator
-from src.compiler.schemas import KnowledgeObject
-from src.indexing.fts_index import FTSIndex
-from src.planner import QueryPlanner
 
 
 def _connect_qdrant(config: dict):
@@ -36,17 +26,31 @@ class KnowledgePipeline:
         self.root = Path(config["workspace"]["root"])
         self.db_path = self.root / config["workspace"]["state_db"]
         self.ignore_file = self.root / config["workspace"]["ignore_file"]
-        self.compiler = CompilerPipeline()
-        self.validator = OntologyValidator()
-        self.planner = QueryPlanner()
+        self._compiler = None
+        self._validator = None
         self._fts = None
         self._qdrant = None
         self._neo4j = None
         self._embedder = None
 
     @property
-    def fts(self) -> FTSIndex:
+    def compiler(self):
+        if self._compiler is None:
+            from src.compiler.pipeline import CompilerPipeline
+            self._compiler = CompilerPipeline()
+        return self._compiler
+
+    @property
+    def validator(self):
+        if self._validator is None:
+            from src.compiler.ontology_val import OntologyValidator
+            self._validator = OntologyValidator()
+        return self._validator
+
+    @property
+    def fts(self):
         if self._fts is None:
+            from src.indexing.fts_index import FTSIndex
             self._fts = FTSIndex()
         return self._fts
 
@@ -74,12 +78,17 @@ class KnowledgePipeline:
 
     def scan_and_parse(self, verbose: bool = False) -> list[dict]:
         """Phase 1: Scan workspace and parse changed files."""
+        from src.ingestion.scanner import Scanner
+        from src.ingestion.state_db import StateDB
+        from src.ingestion.parsers import parse_file as _parse_file
+        self._parse_file = _parse_file
+
         state_db = StateDB(self.db_path)
         scanner = Scanner(self.root, state_db, self.ignore_file)
         results = []
 
         for file_info in scanner.walk():
-            parsed = parse_file(file_info["path"], file_info["file_type"])
+            parsed = self._parse_file(file_info["path"], file_info["file_type"])
             results.append({
                 "path": file_info["path"],
                 "file_type": file_info["file_type"],
@@ -92,7 +101,7 @@ class KnowledgePipeline:
         state_db.close()
         return results
 
-    def compile(self, scan_results: list[dict], verbose: bool = False) -> list[KnowledgeObject]:
+    def compile(self, scan_results: list[dict], verbose: bool = False) -> list:
         """Phase 2: Compile parsed files into Knowledge Objects."""
         objects = []
 
@@ -128,8 +137,10 @@ class KnowledgePipeline:
 
         return objects
 
-    def index(self, objects: list[KnowledgeObject], verbose: bool = False) -> dict:
+    def index(self, objects, verbose: bool = False) -> dict:
         """Phase 3: Index into SQLite FTS5 (always) + Qdrant/Neo4j (if available)."""
+        from src.ingestion.state_db import StateDB
+
         stats = {"indexed": 0, "failed": 0, "errors": []}
         global_db = StateDB(self._global_store_path())
         qdrant = self._try_qdrant()
@@ -195,6 +206,8 @@ class KnowledgePipeline:
 
     def query(self, query_text: str, model: str = "default", verbose: bool = False) -> str:
         """Query returns pointers: file paths + matched terms + sections."""
+        from src.ingestion.state_db import StateDB
+
         results = self.fts.search(query_text, limit=10)
 
         global_db = StateDB(self._global_store_path())

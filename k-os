@@ -16,18 +16,32 @@ from src.ingestion.parsers import parse_file
 
 def load_global_config() -> dict:
     """Load global config from ~/.k-os/config.yaml if it exists."""
-    import yaml
     global_path = Path.home() / ".k-os" / "config.yaml"
-    if global_path.exists():
-        return yaml.safe_load(global_path.read_text()) or {}
-    return {}
+    if not global_path.exists():
+        return {}
+    # Try JSON cache first (fast), fall back to YAML
+    cache_path = global_path.with_suffix(".json")
+    if cache_path.exists() and cache_path.stat().st_mtime >= global_path.stat().st_mtime:
+        return json.loads(cache_path.read_text())
+    import yaml
+    data = yaml.safe_load(global_path.read_text()) or {}
+    cache_path.write_text(json.dumps(data))
+    return data
 
 
 def load_config(workspace: str | None = None) -> dict:
-    import yaml
     project_root = Path(__file__).resolve().parent
     config_path = project_root / "config" / "settings.yaml"
-    config = yaml.safe_load(config_path.read_text())
+    cache_path = config_path.with_suffix(".json")
+
+    # Try JSON cache first
+    if cache_path.exists() and cache_path.stat().st_mtime >= config_path.stat().st_mtime:
+        config = json.loads(cache_path.read_text())
+    else:
+        import yaml
+        config = yaml.safe_load(config_path.read_text())
+        cache_path.write_text(json.dumps(config))
+
     if workspace:
         config["workspace"]["root"] = str(Path(workspace).resolve())
     elif config["workspace"]["root"] == "auto":

@@ -86,21 +86,23 @@ def detect_cli() -> str:
 
 
 def get_adapter(model: str) -> "BaseAdapter":
-    from .claude import ClaudeAdapter
-    from .gpt import GPTAdapter
-    from .codex import CodexAdapter
-    from .qwen import QwenAdapter
-    from .gemini import GeminiAdapter
-
     if model == "default" or model == "auto":
         model = detect_cli()
 
-    adapters = {
-        "claude": ClaudeAdapter(),
-        "gpt": GPTAdapter(),
-        "gpt5": GPTAdapter(),
-        "codex": CodexAdapter(),
-        "qwen": QwenAdapter(),
-        "gemini": GeminiAdapter(),
-    }
-    return adapters.get(model.lower(), GPTAdapter())
+    model = model.lower()
+
+    if model == "claude":
+        from .claude import ClaudeAdapter
+        return ClaudeAdapter()
+    elif model == "codex":
+        from .codex import CodexAdapter
+        return CodexAdapter()
+    elif model == "qwen":
+        from .qwen import QwenAdapter
+        return QwenAdapter()
+    elif model == "gemini":
+        from .gemini import GeminiAdapter
+        return GeminiAdapter()
+    else:
+        from .gpt import GPTAdapter
+        return GPTAdapter()
