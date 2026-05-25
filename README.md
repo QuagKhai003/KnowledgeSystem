@@ -5,12 +5,12 @@ A local-first knowledge compiler that transforms any folder of documents into a 
 This is **not** traditional RAG. Documents are raw material — knowledge must be compiled.
 
 ```
-Raw Files → Parse → Knowledge Objects → Ontology → Abstractions → Multi-Index → Retrieval → Formatted Context
+Raw Files → Parse → Knowledge Objects → Ontology → Abstractions → Index → Query → File Pointers → AI reads raw files
 ```
 
 ## Install
 
-Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/), Python 3.11+, Git.
+Prerequisites: Python 3.11+, Git. Optional: [Docker Desktop](https://www.docker.com/products/docker-desktop/) for semantic search + graph traversal.
 
 ```bash
 # macOS / Linux / WSL / Git Bash
@@ -28,11 +28,11 @@ One command handles: clone, Python venv, dependencies, global `k-os` CLI, databa
 # Index any folder (Obsidian vault, notes, code, PDFs — anything)
 k-os -w /path/to/your/folder rebuild -v
 
-# Query your knowledge from any directory
-k-os query "What is cryptography?" --live
+# Query — returns file pointers, AI reads the raw files
+k-os query "What is cryptography?"
 
 # In Claude Code or any supported AI CLI
-/k-os what is cryptography
+/k-os query what is cryptography
 ```
 
 ## How It Works
@@ -43,23 +43,23 @@ k-os query "What is cryptography?" --live
 
 2. COMPILE     Each file becomes a Knowledge Object with:
                - L0: full raw content
-               - L1: algorithmic outline (key sentences, headings)
-               - L2: concept summary (key terms, definitions, bullet points)
-               - Ontology class, domain, tags, relationships (wikilinks, imports, inheritance)
+               - L1: heading/section outline
+               - L2: concept summary (sampled from full document, 800 chars)
+               - L3: TF-IDF keywords (100 terms, bigrams, proper noun boost)
+               - Ontology class, domain, tags, relationships
 
-3. INDEX       Objects are stored in 3 databases (running in Docker):
-               - Qdrant: vector embeddings for semantic search
-               - OpenSearch: keyword index for exact matches
-               - Neo4j: relationship graph for connected concepts
+3. INDEX       Tiered storage — basic works out of the box, full adds Docker:
+               - SQLite FTS5: BM25 keyword search (always, no Docker)
+               - Qdrant: vector embeddings for semantic search (optional, Docker)
+               - Neo4j: relationship graph for connected concepts (optional, Docker)
 
 4. QUERY       When you ask a question:
-               - Intent classifier determines search strategy
-               - Parallel search across all 3 databases
-               - Results fused with Reciprocal Rank Fusion (RRF)
-               - Context formatted for your AI CLI's consumption
+               - BM25 search across FTS5 index (+ Qdrant/Neo4j if available)
+               - Returns file pointers: paths, matched terms, sections, scores
+               - AI reads the raw files directly — zero information loss
 ```
 
-All databases are global — you can rebuild multiple folders and query across all of them.
+All indexes are global — rebuild multiple folders and query across all of them.
 
 ## CLI Commands
 
@@ -69,9 +69,8 @@ k-os -w <path> compile --json    # Compile files into Knowledge Objects
 k-os -w <path> rebuild -v        # Full pipeline: scan → compile → index
 k-os status                      # Show database summary
 k-os parse path/to/file.md       # Parse a single file (debug)
-k-os query "question" --live     # Query with live database retrieval
-k-os query "question" -m claude  # Query plan only (no database needed)
-k-os query "question" --json     # Output full query plan as JSON
+k-os query "question"            # Query — returns file pointers
+k-os query "question" -m claude  # Query with specific output adapter
 k-os mcp                         # Start MCP server for AI CLI integration
 k-os install --mcp               # Show MCP config for manual setup
 ```
@@ -97,15 +96,15 @@ MCP exposes 5 tools: `k-os-query`, `k-os-scan`, `k-os-compile`, `k-os-rebuild`, 
 
 The adapter is **auto-detected** based on which AI CLI you're using — no `-m` flag needed. You can still override manually with `-m claude`, `-m codex`, etc.
 
-| Adapter | Auto-detected when | Format | Context Budget |
-|---------|-------------------|--------|---------------|
-| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` set | XML with ontology hierarchy | 150,000 tokens |
-| Codex | `OPENAI_API_KEY` set | Minimal comments + raw code | 8,000 tokens |
-| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` set | Markdown with tables | 128,000 tokens |
-| Qwen | `DASHSCOPE_API_KEY` set | Compact JSON | 32,000 tokens |
-| GPT | Default fallback | Structured Markdown | 8,000 tokens |
+| Adapter | Auto-detected when |
+|---------|-------------------|
+| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` set |
+| Codex | `OPENAI_API_KEY` set |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` set |
+| Qwen | `DASHSCOPE_API_KEY` set |
+| GPT | Default fallback |
 
-These are **not** models that Knowledge OS runs. They control how retrieved context is formatted before being passed to your AI CLI. No API keys or LLMs are needed.
+Adapters format the file pointers (paths, matched terms, sections, scores) for each AI CLI. These are **not** models that Knowledge OS runs — no API keys or LLMs are needed.
 
 ## Architecture
 
@@ -114,10 +113,10 @@ These are **not** models that Knowledge OS runs. They control how retrieved cont
 | Ingestion | Incremental file scanning with SHA-256 change detection |
 | Parsing | Markdown (wikilinks, frontmatter, headings), Python/JS AST, PDF layout |
 | Compilation | Knowledge Objects with formal ontology (10 classes, 7 predicates) |
-| Abstraction | 3-level hierarchy: L0 raw → L1 outline → L2 concept summary |
-| Indexing | Dense vectors (Qdrant), sparse keywords (OpenSearch), graph (Neo4j) |
-| Retrieval | Intent-driven query planning, parallel search, RRF fusion |
-| Adapters | Output formatting per target model (XML, Markdown, JSON) |
+| Abstraction | 4-level hierarchy: L0 raw → L1 outline → L2 summary → L3 TF-IDF keywords |
+| Indexing | SQLite FTS5 (always) + Qdrant vectors + Neo4j graph (optional, Docker) |
+| Retrieval | BM25 search → file pointers (paths, matched terms, sections, scores) |
+| Adapters | Pointer formatting per target AI CLI |
 
 ## Project Structure
 
@@ -128,8 +127,8 @@ src/
 ├── ingestion/       # File scanning, state tracking
 │   └── parsers/     # Markdown, code AST, PDF parsers
 ├── compiler/        # Knowledge Objects, ontology, abstraction generation
-├── indexing/        # Qdrant, OpenSearch, Neo4j clients + index manager
-├── retrieval/       # Search coordinator, RRF reranking, context builder
+├── indexing/        # SQLite FTS5, Qdrant, Neo4j clients
+├── retrieval/       # Context builder
 ├── planner/         # Intent classification, query planning
 ├── adapters/        # Output formatters (Claude, GPT, Codex, Qwen, Gemini)
 ├── pipeline.py      # End-to-end orchestrator
@@ -143,7 +142,7 @@ scripts/
 └── db_setup.py      # Cross-platform database health check
 
 config/              # settings.yaml, .knowledgeignore
-docker/              # docker-compose.yml for Neo4j, Qdrant, OpenSearch
+docker/              # docker-compose.yml for Neo4j, Qdrant (optional)
 ```
 
 ## Uninstall
@@ -205,13 +204,15 @@ Remove-Item -Force "$env:USERPROFILE\.claude\commands\k-os.md" -ErrorAction Sile
 | `~/.k-os/bin/k-os.cmd` | Global CLI (Windows) | Launcher batch file |
 | `~/.claude/commands/k-os.md` | Claude Code | `/k-os` slash command |
 | `knowledge-os` in MCP configs | AI CLI settings | MCP server entries |
-| Docker containers | Docker | Neo4j, Qdrant, OpenSearch + all indexed data |
+| Docker containers | Docker | Neo4j, Qdrant (optional) + their indexed data |
 
 ## Key Design Decisions
 
 - **No LLM required** — all abstraction is algorithmic, no API keys needed
+- **No Docker required** — SQLite FTS5 provides keyword search out of the box
 - **No fixed chunking** — abstraction levels replace arbitrary splits
+- **No information loss** — queries return file pointers, AI reads raw files directly
 - **Incremental updates** — SHA-256 hashing skips unchanged files
-- **Multi-signal retrieval** — dense + sparse + graph, fused with RRF
-- **Model-agnostic output** — adapter pattern formats context for any AI
-- **Global databases** — rebuild multiple folders, query across all of them
+- **Tiered infrastructure** — basic (SQLite only) or full (+ Qdrant + Neo4j with Docker)
+- **Model-agnostic output** — adapter pattern formats pointers for any AI CLI
+- **Global indexes** — rebuild multiple folders, query across all of them
