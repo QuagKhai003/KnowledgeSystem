@@ -12,6 +12,7 @@ venv/
 # Data & caches
 data/
 *.db
+config/settings.json
 
 # Coverage
 .coverage
