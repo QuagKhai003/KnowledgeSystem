@@ -1,4 +1,4 @@
-"""Multi-index retrieval coordinator: parallel fetch from dense, sparse, and graph."""
+"""Multi-index retrieval coordinator: parallel fetch from dense (Qdrant), sparse (FTS5), and graph (Neo4j)."""
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
@@ -32,9 +32,9 @@ class RetrievalResult:
 class RetrievalCoordinator:
     """Executes parallel retrieval across multiple indexes."""
 
-    def __init__(self, qdrant=None, opensearch=None, neo4j=None, embedder=None):
+    def __init__(self, qdrant=None, fts=None, neo4j=None, embedder=None):
         self.qdrant = qdrant
-        self.opensearch = opensearch
+        self.fts = fts
         self.neo4j = neo4j
         self.embedder = embedder
 
@@ -47,7 +47,7 @@ class RetrievalCoordinator:
                 futures["dense"] = pool.submit(
                     self._search_dense, plan.query, plan.max_results
                 )
-            if plan.sparse_keyword and self.opensearch:
+            if plan.sparse_keyword and self.fts:
                 futures["sparse"] = pool.submit(
                     self._search_sparse, plan.query, plan.max_results
                 )
@@ -79,14 +79,14 @@ class RetrievalCoordinator:
         ]
 
     def _search_sparse(self, query: str, limit: int) -> list[RetrievalResult]:
-        hits = self.opensearch.search(query, limit=limit)
+        hits = self.fts.search(query, limit=limit)
         return [
             RetrievalResult(
                 id=hit["id"],
                 source="sparse",
                 rank=i + 1,
                 score=hit["score"],
-                payload=hit.get("source", {}),
+                payload=hit,
             )
             for i, hit in enumerate(hits)
         ]

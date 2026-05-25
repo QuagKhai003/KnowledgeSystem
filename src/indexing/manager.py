@@ -1,4 +1,4 @@
-"""Index Manager: coordinates writes across Qdrant, OpenSearch, and Neo4j."""
+"""Index Manager: coordinates writes across Qdrant and Neo4j."""
 
 from src.compiler.schemas import KnowledgeObject
 from .embeddings import EmbeddingModel
@@ -11,32 +11,24 @@ class IndexManager:
         self,
         embedding_model: EmbeddingModel | None = None,
         qdrant=None,
-        opensearch=None,
         neo4j=None,
         config: dict | None = None,
     ):
         self.embedder = embedding_model
         self.qdrant = qdrant
-        self.opensearch = opensearch
         self.neo4j = neo4j
 
-        if config and not any([qdrant, opensearch, neo4j]):
+        if config and not any([qdrant, neo4j]):
             self._connect_from_config(config)
 
     def _connect_from_config(self, config: dict):
         from .qdrant_client import QdrantIndex
-        from .opensearch_cli import OpenSearchIndex
         from .neo4j_client import Neo4jClient
 
         db = config.get("databases", {})
         try:
             q = db["qdrant"]
             self.qdrant = QdrantIndex(host=q["host"], port=q["port"])
-        except Exception:
-            pass
-        try:
-            o = db["opensearch"]
-            self.opensearch = OpenSearchIndex(host=o["host"], port=o["port"])
         except Exception:
             pass
         try:
@@ -50,7 +42,7 @@ class IndexManager:
     def index_object(self, obj: KnowledgeObject) -> dict:
         """Index a single Knowledge Object across all available stores.
         Returns a status dict indicating which stores succeeded."""
-        status = {"qdrant": False, "opensearch": False, "neo4j": False}
+        status = {"qdrant": False, "neo4j": False}
 
         embed_text = self._build_embed_text(obj)
 
@@ -70,22 +62,6 @@ class IndexManager:
             except Exception:
                 pass
 
-        if self.opensearch:
-            try:
-                doc = {
-                    "id": obj.id,
-                    "type": obj.type,
-                    "name": obj.name,
-                    "content": embed_text,
-                    "tags": obj.tags,
-                    "file_path": obj.source_file,
-                    "domain": obj.domain,
-                }
-                self.opensearch.index_document(obj.id, doc)
-                status["opensearch"] = True
-            except Exception:
-                pass
-
         if self.neo4j:
             try:
                 self.neo4j.sync_knowledge_object(obj)
@@ -102,11 +78,6 @@ class IndexManager:
         if self.qdrant:
             try:
                 self.qdrant.delete_by_id(obj_id)
-            except Exception:
-                pass
-        if self.opensearch:
-            try:
-                self.opensearch.delete_document(obj_id)
             except Exception:
                 pass
         if self.neo4j:

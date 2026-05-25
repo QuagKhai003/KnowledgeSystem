@@ -1,4 +1,4 @@
-"""SQLite FTS5 full-text search index — replaces OpenSearch for keyword/BM25 search."""
+"""SQLite FTS5 full-text search index for keyword/BM25 search."""
 
 import sqlite3
 from pathlib import Path
