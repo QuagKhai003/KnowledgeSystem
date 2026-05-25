@@ -14,6 +14,15 @@ from src.ingestion.state_db import StateDB
 from src.ingestion.parsers import parse_file
 
 
+def load_global_config() -> dict:
+    """Load global config from ~/.k-os/config.yaml if it exists."""
+    import yaml
+    global_path = Path.home() / ".k-os" / "config.yaml"
+    if global_path.exists():
+        return yaml.safe_load(global_path.read_text()) or {}
+    return {}
+
+
 def load_config(workspace: str | None = None) -> dict:
     import yaml
     project_root = Path(__file__).resolve().parent
@@ -22,7 +31,12 @@ def load_config(workspace: str | None = None) -> dict:
     if workspace:
         config["workspace"]["root"] = str(Path(workspace).resolve())
     elif config["workspace"]["root"] == "auto":
-        config["workspace"]["root"] = str(project_root)
+        global_cfg = load_global_config()
+        default_vault = global_cfg.get("default_vault", "")
+        if default_vault:
+            config["workspace"]["root"] = default_vault
+        else:
+            config["workspace"]["root"] = str(project_root)
     return config
 
 
@@ -206,6 +220,49 @@ def cmd_query(args):
         print(json.dumps(metadata, indent=2))
 
 
+def cmd_mcp(args):
+    """Start the MCP server for AI CLI integration."""
+    from src.mcp_server import main as mcp_main
+    mcp_main()
+
+
+def cmd_install(args):
+    """Show installation instructions for global access."""
+    project_root = Path(__file__).resolve().parent
+
+    if sys.platform == "win32":
+        script = project_root / "scripts" / "install.ps1"
+        print("Run in PowerShell:")
+        print(f'  powershell -ExecutionPolicy Bypass -File "{script}"')
+    else:
+        script = project_root / "scripts" / "install.sh"
+        print("Run in terminal:")
+        print(f"  bash {script}")
+
+    print()
+    print("This will:")
+    print("  1. Create ~/.k-os/config.yaml (global config)")
+    print("  2. Install 'k-os' command globally")
+    print("  3. Add /k-os slash command to Claude Code")
+
+    if args.mcp:
+        print()
+        print("MCP server config for your AI CLI settings:")
+        mcp_config = {
+            "mcpServers": {
+                "knowledge-os": {
+                    "command": str(project_root / ".venv" / "bin" / "python"),
+                    "args": [str(project_root / "src" / "mcp_server.py")]
+                }
+            }
+        }
+        if sys.platform == "win32":
+            mcp_config["mcpServers"]["knowledge-os"]["command"] = str(
+                project_root / ".venv" / "Scripts" / "python.exe"
+            )
+        print(json.dumps(mcp_config, indent=2))
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="k-os",
@@ -247,6 +304,13 @@ def main():
     query_p.add_argument("--live", action="store_true", help="Execute retrieval against databases")
     query_p.add_argument("-v", "--verbose", action="store_true")
 
+    # mcp
+    subparsers.add_parser("mcp", help="Start MCP server for AI CLI integration")
+
+    # install
+    install_p = subparsers.add_parser("install", help="Show global installation instructions")
+    install_p.add_argument("--mcp", action="store_true", help="Also show MCP server config")
+
     args = parser.parse_args()
     commands = {
         "scan": cmd_scan,
@@ -256,6 +320,8 @@ def main():
         "rebuild": cmd_rebuild,
         "status": cmd_status,
         "query": cmd_query,
+        "mcp": cmd_mcp,
+        "install": cmd_install,
     }
 
     handler = commands.get(args.command)
