@@ -144,7 +144,7 @@ class KnowledgePipeline:
     def index(self, objects: list[KnowledgeObject], verbose: bool = False) -> dict:
         """Phase 3: Index Knowledge Objects into all databases + local store."""
         stats = {"indexed": 0, "failed": 0, "errors": []}
-        state_db = StateDB(self.db_path)
+        global_db = StateDB(self._global_store_path())
 
         for obj in objects:
             try:
@@ -153,7 +153,7 @@ class KnowledgePipeline:
                     stats["indexed"] += 1
                 else:
                     stats["failed"] += 1
-                state_db.store_knowledge_object(
+                global_db.store_knowledge_object(
                     obj.id, obj.name,
                     obj.abstractions.level_0,
                     obj.abstractions.level_1,
@@ -166,8 +166,8 @@ class KnowledgePipeline:
                 if verbose:
                     print(f"  ERROR indexing {obj.id}: {e}")
 
-        state_db.commit()
-        state_db.close()
+        global_db.commit()
+        global_db.close()
         return stats
 
     def query(self, query_text: str, model: str = "default", verbose: bool = False) -> str:
@@ -188,10 +188,10 @@ class KnowledgePipeline:
         merged = rrf_merge(multi_results, weights=weights, k=60)
         top_ids = [r.id for r in merged[:plan.max_results]]
 
-        # Phase 2: Extract — fetch L0/L1 from local store and extract relevant passages
-        state_db = StateDB(self.db_path)
-        ko_store = state_db.get_knowledge_objects_batch(top_ids)
-        state_db.close()
+        # Phase 2: Extract — fetch L0/L1 from global knowledge store
+        global_db = StateDB(self._global_store_path())
+        ko_store = global_db.get_knowledge_objects_batch(top_ids)
+        global_db.close()
 
         builder = ContextBuilder()
         blocks = []
@@ -257,6 +257,12 @@ class KnowledgePipeline:
             "index_failures": index_stats["failed"],
             "elapsed_seconds": round(elapsed, 2),
         }
+
+    def _global_store_path(self) -> Path:
+        """Global knowledge store shared across all workspaces."""
+        store_dir = Path.home() / ".k-os"
+        store_dir.mkdir(parents=True, exist_ok=True)
+        return store_dir / "knowledge_store.db"
 
     def _extract_relationships_from_results(self, multi_results: dict) -> list[dict]:
         """Extract relationship data from graph retrieval results."""
