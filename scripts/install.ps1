@@ -102,20 +102,52 @@ Show the results to the user. If databases aren't running, suggest: ``docker com
 "@ | Set-Content -Path "$CLAUDE_CMD_DIR\k-os.md" -Encoding UTF8
 Write-Host "Installed Claude Code command: /k-os"
 
-# 5. Set up Python virtual environment if missing
+# 5. Set up Python virtual environment and install dependencies
 if (-not (Test-Path "$INSTALL_DIR\.venv")) {
     Write-Host "Setting up Python venv..."
     python -m venv "$INSTALL_DIR\.venv"
-    & "$INSTALL_DIR\.venv\Scripts\pip.exe" install -q pyyaml
-    Write-Host "Virtual environment ready"
+}
+Write-Host "Installing dependencies..."
+$pipPath = "$INSTALL_DIR\.venv\Scripts\pip.exe"
+if (Test-Path "$INSTALL_DIR\requirements.txt") {
+    & $pipPath install -q -r "$INSTALL_DIR\requirements.txt" 2>$null
+} else {
+    & $pipPath install -q pyyaml
+}
+Write-Host "Virtual environment ready"
+
+# 6. Start Docker databases
+# 6. Check Docker and start databases
+if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+    Write-Host ""
+    Write-Host "ERROR: Docker is required but not found." -ForegroundColor Red
+    Write-Host "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
+    Write-Host "  Then re-run this script."
+    exit 1
+}
+
+Write-Host ""
+Write-Host "Starting databases..."
+docker compose -f "$INSTALL_DIR\docker\docker-compose.yml" up -d
+Write-Host "Waiting for databases to be ready..."
+Start-Sleep -Seconds 15
+
+# Health checks
+$allReady = $true
+try { $null = Invoke-RestMethod -Uri "http://localhost:6333/healthz" -TimeoutSec 3; Write-Host "  Qdrant: ready" } catch { Write-Host "  Qdrant: not ready yet"; $allReady = $false }
+try { $null = Invoke-RestMethod -Uri "http://localhost:9200" -TimeoutSec 3; Write-Host "  OpenSearch: ready" } catch { Write-Host "  OpenSearch: not ready yet"; $allReady = $false }
+try { $null = Invoke-RestMethod -Uri "http://localhost:7474" -TimeoutSec 3; Write-Host "  Neo4j: ready" } catch { Write-Host "  Neo4j: not ready yet"; $allReady = $false }
+
+if (-not $allReady) {
+    Write-Host ""
+    Write-Host "  Some databases are still starting. Wait ~30s and they should be ready."
 }
 
 Write-Host ""
 Write-Host "=== Installation complete ===" -ForegroundColor Green
 Write-Host ""
 Write-Host "Usage from any directory:"
-Write-Host "  k-os -w C:\path\to\vault scan -v        # scan a vault"
-Write-Host "  k-os -w C:\path\to\vault rebuild -v     # full rebuild"
+Write-Host "  k-os -w C:\path\to\vault rebuild -v     # index a vault"
 Write-Host '  k-os query "your question" --live        # query knowledge'
 Write-Host ""
 Write-Host "In Claude Code (any directory):"

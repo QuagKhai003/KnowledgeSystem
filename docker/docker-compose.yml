@@ -10,7 +10,7 @@ services:
     environment:
       NEO4J_AUTH: neo4j/knowledge_os
     volumes:
-      - neo4j_data:/data
+      - ./volumes/neo4j:/data
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -19,7 +19,7 @@ services:
       - "6333:6333"
       - "6334:6334"
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ./volumes/qdrant:/qdrant/storage
 
   opensearch:
     image: opensearchproject/opensearch:2
@@ -30,9 +30,4 @@ services:
       discovery.type: single-node
       DISABLE_SECURITY_PLUGIN: "true"
     volumes:
-      - opensearch_data:/usr/share/opensearch/data
-
-volumes:
-  neo4j_data:
-  qdrant_data:
-  opensearch_data:
+      - ./volumes/opensearch:/usr/share/opensearch/data

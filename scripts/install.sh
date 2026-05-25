@@ -107,20 +107,47 @@ CMDEOF
 sed -i "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
 echo "Installed Claude Code command: /k-os"
 
-# 5. Set up Python virtual environment if missing
+# 5. Set up Python virtual environment and install dependencies
 if [ ! -d "${INSTALL_DIR}/.venv" ]; then
     echo "Setting up Python venv..."
     python3 -m venv "${INSTALL_DIR}/.venv"
+fi
+echo "Installing dependencies..."
+"${INSTALL_DIR}/.venv/bin/pip" install -q -r "${INSTALL_DIR}/requirements.txt" 2>/dev/null || \
     "${INSTALL_DIR}/.venv/bin/pip" install -q pyyaml
-    echo "Virtual environment ready"
+echo "Virtual environment ready"
+
+# 6. Check Docker and start databases
+if ! command -v docker &> /dev/null; then
+    echo ""
+    echo "ERROR: Docker is required but not found." >&2
+    echo "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
+    echo "  Then re-run this script."
+    exit 1
+fi
+
+echo ""
+echo "Starting databases..."
+docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" up -d
+echo "Waiting for databases to be ready..."
+sleep 15
+
+# Health checks
+READY=true
+curl -sf http://localhost:6333/healthz > /dev/null 2>&1 && echo "  Qdrant: ready" || { echo "  Qdrant: not ready yet"; READY=false; }
+curl -sf http://localhost:9200 > /dev/null 2>&1 && echo "  OpenSearch: ready" || { echo "  OpenSearch: not ready yet"; READY=false; }
+curl -sf http://localhost:7474 > /dev/null 2>&1 && echo "  Neo4j: ready" || { echo "  Neo4j: not ready yet"; READY=false; }
+
+if [ "$READY" = false ]; then
+    echo ""
+    echo "  Some databases are still starting. Wait ~30s and they should be ready."
 fi
 
 echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "Usage from any directory:"
-echo "  k-os -w /path/to/vault scan -v        # scan a vault"
-echo "  k-os -w /path/to/vault rebuild -v     # full rebuild"
+echo "  k-os -w /path/to/vault rebuild -v     # index a vault"
 echo "  k-os query \"your question\" --live     # query knowledge"
 echo ""
 echo "In Claude Code (any directory):"
