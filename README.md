@@ -140,8 +140,7 @@ scripts/
 ├── bootstrap.ps1    # One-line installer (Windows PowerShell)
 ├── install.sh       # Full installer (bash)
 ├── install.ps1      # Full installer (PowerShell)
-├── db_setup.sh      # Database health check
-└── db_setup.py      # Cross-platform database setup
+└── db_setup.py      # Cross-platform database health check
 
 config/              # settings.yaml, .knowledgeignore
 docker/              # docker-compose.yml for Neo4j, Qdrant, OpenSearch
