@@ -12,9 +12,6 @@ databases:
   qdrant:
     host: localhost
     port: 6333
-  opensearch:
-    host: localhost
-    port: 9200
 
 parsing:
   max_file_size_mb: 50

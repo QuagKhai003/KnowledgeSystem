@@ -45,7 +45,7 @@ k-os query "What is cryptography?"
 
 ### 1. Scan
 
-Point `k-os` at any folder containing `.md`, `.py`, `.js`, `.ts`, or `.pdf` files. SHA-256 hashing ensures only changed files are reprocessed on subsequent runs.
+Point `k-os` at any folder containing `.md`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, or `.pdf` files. SHA-256 hashing ensures only changed files are reprocessed on subsequent runs.
 
 ### 2. Compile
 
@@ -133,11 +133,11 @@ Adapters control how file pointers are formatted for each AI CLI. Knowledge OS d
 | Layer | Responsibility |
 |-------|---------------|
 | Ingestion | Incremental file scanning with SHA-256 change detection |
-| Parsing | Markdown (wikilinks, frontmatter, headings), Python/JS AST, PDF layout extraction |
+| Parsing | Markdown (wikilinks, frontmatter, headings), Python/JS/TS/JSX/TSX AST, PDF layout extraction |
 | Compilation | Knowledge Object construction with formal ontology (10 classes, 7 predicates) |
 | Abstraction | Four-level hierarchy: L0 (raw) → L1 (outline) → L2 (summary) → L3 (keywords) |
 | Indexing | SQLite FTS5 (default) with optional Qdrant vector and Neo4j graph indexes |
-| Retrieval | BM25-ranked file pointers with matched terms, sections, and relevance scores |
+| Retrieval | Search coordination, RRF reranking, BM25-ranked file pointers |
 | Adapters | Output formatting tailored to target AI CLI |
 
 ## Project Structure
@@ -151,7 +151,7 @@ src/
 │   └── parsers/        Markdown, code AST, and PDF parsers
 ├── compiler/           Knowledge Object compilation and ontology validation
 ├── indexing/           SQLite FTS5, Qdrant, and Neo4j clients
-├── retrieval/          Context building
+├── retrieval/          Search coordination, RRF reranking, context building
 ├── planner/            Intent classification and query planning
 ├── adapters/           Output formatters (Claude, GPT, Codex, Qwen, Gemini)
 ├── pipeline.py         End-to-end orchestrator
@@ -225,7 +225,3 @@ Remove-Item -Force "$env:USERPROFILE\.claude\commands\k-os.md" -ErrorAction Sile
 ```
 
 Remove the `knowledge-os` entry from the same MCP configuration files listed above.
-
-## License
-
-MIT
