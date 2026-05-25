@@ -127,23 +127,47 @@ CLAUDE_CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CLAUDE_CMD_DIR"
 
 cat > "$CLAUDE_CMD_DIR/k-os.md" << 'CMDEOF'
-# Knowledge OS Query
+# Knowledge OS
 
-Run a knowledge query against the user's indexed vault using the Knowledge OS system.
+Run Knowledge OS commands against any folder.
 
-Usage: /k-os <query>
+## Usage
 
-Execute the query by running:
+`/k-os <command> [args]`
+
+## Commands
+
+| Command | Example | Description |
+|---------|---------|-------------|
+| `rebuild <path>` | `/k-os rebuild /path/to/vault` | Full pipeline: scan, compile, index a folder |
+| `query <question>` | `/k-os query what is cryptography` | Query your knowledge base |
+| `scan <path>` | `/k-os scan /path/to/folder` | Scan folder for files (dry run) |
+| `compile <path>` | `/k-os compile /path/to/folder` | Compile files into Knowledge Objects |
+| `status` | `/k-os status` | Show database summary |
+| `help` | `/k-os help` | Show this help |
+
+If no command is given, show this help.
+
+## Execution
+
+Parse the first word of `$ARGUMENTS` as the command.
+
+- **rebuild**: run `k-os -w <path> rebuild -v`
+- **query**: run `k-os query "<question>" --live`
+- **scan**: run `k-os -w <path> scan -v`
+- **compile**: run `k-os -w <path> compile --json`
+- **status**: run `k-os status`
+- **help** or empty: display the commands table above
+
+If `k-os` is not in PATH, use the full path:
 ```
-k-os query "$ARGUMENTS" --live
+$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/k-os
 ```
 
-If that fails (k-os not in PATH), try:
+If databases aren't running, suggest:
 ```
-$INSTALL_DIR/.venv/bin/python $INSTALL_DIR/k-os query "$ARGUMENTS" --live
+docker compose -f $INSTALL_DIR/docker/docker-compose.yml up -d
 ```
-
-Show the results to the user. If databases aren't running, suggest: `docker compose -f $INSTALL_DIR/docker/docker-compose.yml up -d`
 CMDEOF
 
 sed -i.bak "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
