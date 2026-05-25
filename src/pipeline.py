@@ -30,9 +30,11 @@ def _connect_opensearch(config: dict):
 
 
 def _connect_neo4j(config: dict):
+    import os
     from src.indexing.neo4j_client import Neo4jClient
     db_cfg = config["databases"]["neo4j"]
-    return Neo4jClient(uri=db_cfg["uri"], user=db_cfg["user"], password=db_cfg["password"])
+    password = os.environ.get("NEO4J_PASSWORD", db_cfg["password"])
+    return Neo4jClient(uri=db_cfg["uri"], user=db_cfg["user"], password=password)
 
 
 class KnowledgePipeline:

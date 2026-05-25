@@ -28,6 +28,14 @@ PROJECT.md
 blueprint/
 knowledge_os_ai_agent_system_prompt_spec_v_1.md
 
+# Secrets & credentials
+.env
+.env.*
+*.pem
+*.key
+*.cert
+credentials*
+
 # OS
 .DS_Store
 Thumbs.db

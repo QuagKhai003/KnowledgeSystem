@@ -101,6 +101,7 @@ class Neo4jClient:
             )
 
     def get_concept_context(self, concept_id: str, hops: int = 2) -> list[dict]:
+        hops = max(1, min(int(hops), 5))
         with self._driver.session() as session:
             result = session.run(
                 "MATCH (c {id: $id}) "
