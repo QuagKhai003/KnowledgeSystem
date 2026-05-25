@@ -80,7 +80,50 @@ else
 fi
 echo "Installed launcher: $LAUNCHER"
 
-# 4. Set up Claude Code slash command (global)
+# 4. Configure AI CLI integrations
+PYTHON_BIN="${INSTALL_DIR}/.venv/bin/python"
+MCP_SCRIPT="${INSTALL_DIR}/src/mcp_server.py"
+MCP_ENTRY="{\"command\":\"${PYTHON_BIN}\",\"args\":[\"${MCP_SCRIPT}\"]}"
+
+configure_mcp() {
+    local name="$1"
+    local config_file="$2"
+    local key_path="$3"
+
+    mkdir -p "$(dirname "$config_file")"
+
+    if [ -f "$config_file" ]; then
+        if command -v python3 &> /dev/null; then
+            python3 -c "
+import json, sys
+cfg = json.load(open('$config_file'))
+keys = '$key_path'.split('.')
+obj = cfg
+for k in keys[:-1]:
+    obj = obj.setdefault(k, {})
+obj[keys[-1]] = json.loads('$MCP_ENTRY')
+json.dump(cfg, open('$config_file', 'w'), indent=2)
+"
+        fi
+    else
+        python3 -c "
+import json
+keys = '$key_path'.split('.')
+cfg = {}
+obj = cfg
+for k in keys[:-1]:
+    obj[k] = {}
+    obj = obj[k]
+obj[keys[-1]] = json.loads('$MCP_ENTRY')
+json.dump(cfg, open('$config_file', 'w'), indent=2)
+"
+    fi
+    echo "  $name: configured"
+}
+
+echo "Configuring AI CLI integrations..."
+
+# Claude Code — slash command
 CLAUDE_CMD_DIR="$HOME/.claude/commands"
 mkdir -p "$CLAUDE_CMD_DIR"
 
@@ -105,7 +148,31 @@ Show the results to the user. If databases aren't running, suggest: `docker comp
 CMDEOF
 
 sed -i "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
-echo "Installed Claude Code command: /k-os"
+echo "  Claude Code: /k-os slash command installed"
+
+# Claude Code — MCP server
+CLAUDE_MCP="$HOME/.claude/settings.json"
+if [ -d "$HOME/.claude" ]; then
+    configure_mcp "Claude Code MCP" "$CLAUDE_MCP" "mcpServers.knowledge-os"
+fi
+
+# Cursor — MCP server
+CURSOR_MCP="$HOME/.cursor/mcp.json"
+if [ -d "$HOME/.cursor" ] || command -v cursor &> /dev/null; then
+    configure_mcp "Cursor" "$CURSOR_MCP" "mcpServers.knowledge-os"
+fi
+
+# Windsurf — MCP server
+WINDSURF_MCP="$HOME/.codeium/windsurf/mcp_config.json"
+if [ -d "$HOME/.codeium/windsurf" ] || command -v windsurf &> /dev/null; then
+    configure_mcp "Windsurf" "$WINDSURF_MCP" "mcpServers.knowledge-os"
+fi
+
+# VS Code + Continue — MCP server
+CONTINUE_MCP="$HOME/.continue/config.json"
+if [ -d "$HOME/.continue" ]; then
+    configure_mcp "Continue" "$CONTINUE_MCP" "mcpServers.knowledge-os"
+fi
 
 # 5. Set up Python virtual environment and install dependencies
 if [ ! -d "${INSTALL_DIR}/.venv" ]; then
@@ -150,7 +217,10 @@ echo "Usage from any directory:"
 echo "  k-os -w /path/to/vault rebuild -v     # index a vault"
 echo "  k-os query \"your question\" --live     # query knowledge"
 echo ""
-echo "In Claude Code (any directory):"
-echo "  /k-os what is cryptography"
+echo "In any AI CLI:"
+echo "  Claude Code:  /k-os what is cryptography"
+echo "  Cursor:       uses k-os tools automatically (MCP)"
+echo "  Windsurf:     uses k-os tools automatically (MCP)"
+echo "  Continue:     uses k-os tools automatically (MCP)"
 echo ""
 echo "Config: $CONFIG_FILE"

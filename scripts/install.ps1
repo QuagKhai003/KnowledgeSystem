@@ -75,7 +75,48 @@ if ($userPath -notlike "*$BIN_DIR*") {
     Write-Host "Added $BIN_DIR to user PATH"
 }
 
-# 4. Set up Claude Code slash command (global)
+# 4. Configure AI CLI integrations
+$PYTHON_BIN = "$INSTALL_DIR\.venv\Scripts\python.exe"
+$MCP_SCRIPT = "$INSTALL_DIR\src\mcp_server.py"
+$MCP_ENTRY = @{ command = $PYTHON_BIN; args = @($MCP_SCRIPT) }
+
+function Configure-MCP {
+    param($Name, $ConfigFile, $KeyPath)
+
+    $dir = Split-Path $ConfigFile -Parent
+    if (-not (Test-Path $dir)) {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    }
+
+    if (Test-Path $ConfigFile) {
+        $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+    } else {
+        $cfg = [PSCustomObject]@{}
+    }
+
+    $keys = $KeyPath -split '\.'
+    $obj = $cfg
+    for ($i = 0; $i -lt $keys.Count - 1; $i++) {
+        $k = $keys[$i]
+        if (-not ($obj.PSObject.Properties.Name -contains $k)) {
+            $obj | Add-Member -NotePropertyName $k -NotePropertyValue ([PSCustomObject]@{})
+        }
+        $obj = $obj.$k
+    }
+    $lastKey = $keys[-1]
+    if ($obj.PSObject.Properties.Name -contains $lastKey) {
+        $obj.$lastKey = $MCP_ENTRY
+    } else {
+        $obj | Add-Member -NotePropertyName $lastKey -NotePropertyValue $MCP_ENTRY
+    }
+
+    $cfg | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigFile -Encoding UTF8
+    Write-Host "  ${Name}: configured"
+}
+
+Write-Host "Configuring AI CLI integrations..."
+
+# Claude Code — slash command
 $CLAUDE_CMD_DIR = "$env:USERPROFILE\.claude\commands"
 if (-not (Test-Path $CLAUDE_CMD_DIR)) {
     New-Item -ItemType Directory -Path $CLAUDE_CMD_DIR -Force | Out-Null
@@ -100,7 +141,27 @@ python $INSTALL_DIR\k-os query "`$ARGUMENTS" -m claude --live
 
 Show the results to the user. If databases aren't running, suggest: ``docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d``
 "@ | Set-Content -Path "$CLAUDE_CMD_DIR\k-os.md" -Encoding UTF8
-Write-Host "Installed Claude Code command: /k-os"
+Write-Host "  Claude Code: /k-os slash command installed"
+
+# Claude Code — MCP server
+if (Test-Path "$env:USERPROFILE\.claude") {
+    Configure-MCP "Claude Code MCP" "$env:USERPROFILE\.claude\settings.json" "mcpServers.knowledge-os"
+}
+
+# Cursor — MCP server
+if ((Test-Path "$env:USERPROFILE\.cursor") -or ($null -ne (Get-Command cursor -ErrorAction SilentlyContinue))) {
+    Configure-MCP "Cursor" "$env:USERPROFILE\.cursor\mcp.json" "mcpServers.knowledge-os"
+}
+
+# Windsurf — MCP server
+if ((Test-Path "$env:USERPROFILE\.codeium\windsurf") -or ($null -ne (Get-Command windsurf -ErrorAction SilentlyContinue))) {
+    Configure-MCP "Windsurf" "$env:USERPROFILE\.codeium\windsurf\mcp_config.json" "mcpServers.knowledge-os"
+}
+
+# VS Code + Continue — MCP server
+if (Test-Path "$env:USERPROFILE\.continue") {
+    Configure-MCP "Continue" "$env:USERPROFILE\.continue\config.json" "mcpServers.knowledge-os"
+}
 
 # 5. Set up Python virtual environment and install dependencies
 if (-not (Test-Path "$INSTALL_DIR\.venv")) {
@@ -116,7 +177,6 @@ if (Test-Path "$INSTALL_DIR\requirements.txt") {
 }
 Write-Host "Virtual environment ready"
 
-# 6. Start Docker databases
 # 6. Check Docker and start databases
 if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host ""
@@ -150,8 +210,11 @@ Write-Host "Usage from any directory:"
 Write-Host "  k-os -w C:\path\to\vault rebuild -v     # index a vault"
 Write-Host '  k-os query "your question" --live        # query knowledge'
 Write-Host ""
-Write-Host "In Claude Code (any directory):"
-Write-Host "  /k-os what is cryptography"
+Write-Host "In any AI CLI:"
+Write-Host "  Claude Code:  /k-os what is cryptography"
+Write-Host "  Cursor:       uses k-os tools automatically (MCP)"
+Write-Host "  Windsurf:     uses k-os tools automatically (MCP)"
+Write-Host "  Continue:     uses k-os tools automatically (MCP)"
 Write-Host ""
 Write-Host "Config: $CONFIG_FILE"
 Write-Host ""
