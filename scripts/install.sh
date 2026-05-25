@@ -147,7 +147,8 @@ $INSTALL_DIR/.venv/bin/python $INSTALL_DIR/k-os query "$ARGUMENTS" -m claude --l
 Show the results to the user. If databases aren't running, suggest: `docker compose -f $INSTALL_DIR/docker/docker-compose.yml up -d`
 CMDEOF
 
-sed -i "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
+sed -i.bak "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
+rm -f "$CLAUDE_CMD_DIR/k-os.md.bak"
 echo "  Claude Code: /k-os slash command installed"
 
 # Claude Code — MCP server
