@@ -155,7 +155,7 @@ docker/              # docker-compose.yml for Neo4j, Qdrant, OpenSearch
 docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml down -v
 
 # Remove global CLI
-sudo rm -f /usr/local/bin/k-os
+rm -f ~/.local/bin/k-os
 
 # Remove all Knowledge OS files and config
 rm -rf ~/.k-os
@@ -201,7 +201,7 @@ Remove-Item -Force "$env:USERPROFILE\.claude\commands\k-os.md" -ErrorAction Sile
 | What | Location | Purpose |
 |------|----------|---------|
 | `~/.k-os/` | Config + cloned repo | Global config, source code, venv |
-| `/usr/local/bin/k-os` | Global CLI (Linux/Mac) | Launcher script |
+| `~/.local/bin/k-os` | Global CLI (Linux/Mac/WSL) | Launcher script |
 | `~/.k-os/bin/k-os.cmd` | Global CLI (Windows) | Launcher batch file |
 | `~/.claude/commands/k-os.md` | Claude Code | `/k-os` slash command |
 | `knowledge-os` in MCP configs | AI CLI settings | MCP server entries |

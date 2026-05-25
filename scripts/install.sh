@@ -50,33 +50,32 @@ else
 fi
 
 # 3. Create global launcher script
-LAUNCHER="/usr/local/bin/k-os"
-NEEDS_SUDO=false
+BIN_DIR="$HOME/.local/bin"
+mkdir -p "$BIN_DIR"
+LAUNCHER="$BIN_DIR/k-os"
 
-if [ ! -w "$(dirname "$LAUNCHER")" ]; then
-    NEEDS_SUDO=true
-fi
-
-LAUNCHER_CONTENT="#!/usr/bin/env bash
+cat > "$LAUNCHER" << EOF
+#!/usr/bin/env bash
 # Knowledge OS global launcher — installed by install.sh
-INSTALL_DIR=\"${INSTALL_DIR}\"
-VENV=\"\${INSTALL_DIR}/.venv/bin/python\"
-FALLBACK=\"python3\"
+INSTALL_DIR="${INSTALL_DIR}"
+VENV="\${INSTALL_DIR}/.venv/bin/python"
 
-if [ -f \"\$VENV\" ]; then
-    exec \"\$VENV\" \"\${INSTALL_DIR}/k-os\" \"\$@\"
+if [ -f "\$VENV" ]; then
+    exec "\$VENV" "\${INSTALL_DIR}/k-os" "\$@"
 else
-    exec \$FALLBACK \"\${INSTALL_DIR}/k-os\" \"\$@\"
+    exec python3 "\${INSTALL_DIR}/k-os" "\$@"
 fi
-"
+EOF
+chmod +x "$LAUNCHER"
 
-if [ "$NEEDS_SUDO" = true ]; then
-    echo "Need sudo to install to /usr/local/bin"
-    echo "$LAUNCHER_CONTENT" | sudo tee "$LAUNCHER" > /dev/null
-    sudo chmod +x "$LAUNCHER"
-else
-    echo "$LAUNCHER_CONTENT" > "$LAUNCHER"
-    chmod +x "$LAUNCHER"
+# Ensure ~/.local/bin is in PATH
+if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+        if [ -f "$rc" ] && ! grep -q '.local/bin' "$rc"; then
+            echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$rc"
+        fi
+    done
+    export PATH="$BIN_DIR:$PATH"
 fi
 echo "Installed launcher: $LAUNCHER"
 
