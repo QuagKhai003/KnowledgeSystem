@@ -21,13 +21,6 @@ services:
     volumes:
       - ./volumes/qdrant:/qdrant/storage
 
-  opensearch:
-    image: opensearchproject/opensearch:2
-    container_name: knowledge_os_opensearch
-    ports:
-      - "9200:9200"
-    environment:
-      discovery.type: single-node
-      DISABLE_SECURITY_PLUGIN: "true"
-    volumes:
-      - ./volumes/opensearch:/usr/share/opensearch/data
+  # OpenSearch removed — replaced by SQLite FTS5 (built into Python, no Docker needed)
+  # Qdrant provides semantic search, Neo4j provides graph traversal
+  # Keyword/BM25 search is handled by SQLite FTS5 at ~/.k-os/fts_index.db

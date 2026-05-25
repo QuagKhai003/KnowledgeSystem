@@ -17,6 +17,29 @@ class BaseAdapter(ABC):
         """Format context blocks into model-specific prompt context."""
         ...
 
+    def format_pointers(self, pointers: list[dict], query: str) -> str:
+        """Format file pointers for AI CLI consumption."""
+        if not pointers:
+            return "No relevant documents found for this query."
+
+        parts = [f"# Search Results for: {query}", ""]
+        parts.append("The following files contain relevant information. Read the files to answer the query.")
+        parts.append("")
+
+        for i, p in enumerate(pointers, 1):
+            parts.append(f"## {i}. {p['name']}")
+            parts.append(f"**File:** `{p['file']}`")
+            parts.append(f"**Relevance:** {p['score']}")
+            if p.get("why"):
+                parts.append(f"**Matched terms:** {p['why']}")
+            if p.get("sections"):
+                parts.append(f"**Sections:** {'; '.join(p['sections'])}")
+            if p.get("domain"):
+                parts.append(f"**Domain:** {p['domain']}")
+            parts.append("")
+
+        return "\n".join(parts)
+
     def estimate_tokens(self, text: str) -> int:
         return max(1, len(text) // 4)
 

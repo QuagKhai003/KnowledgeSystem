@@ -153,7 +153,7 @@ If no command is given, show this help.
 Parse the first word of `$ARGUMENTS` as the command.
 
 - **rebuild**: run `k-os -w <path> rebuild -v`
-- **query**: run `k-os query "<question>" --live`
+- **query**: run `k-os query "<question>"`. The output contains file pointers — read the listed files to answer the question.
 - **scan**: run `k-os -w <path> scan -v`
 - **compile**: run `k-os -w <path> compile --json`
 - **status**: run `k-os status`
@@ -233,38 +233,31 @@ echo "Installing dependencies..."
     "${INSTALL_DIR}/.venv/bin/pip" install -q pyyaml
 echo "Virtual environment ready"
 
-# 6. Check Docker and start databases
-if ! command -v docker &> /dev/null; then
+# 6. Optional: Docker databases for semantic search + graph traversal
+if command -v docker &> /dev/null; then
     echo ""
-    echo "ERROR: Docker is required but not found." >&2
-    echo "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-    echo "  Then re-run this script."
-    exit 1
-fi
+    echo "Docker found. Starting optional databases (Qdrant + Neo4j)..."
+    docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" up -d
+    echo "Waiting for databases to be ready..."
+    sleep 15
 
-echo ""
-echo "Starting databases..."
-docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" up -d
-echo "Waiting for databases to be ready..."
-sleep 15
-
-# Health checks
-READY=true
-curl -sf http://localhost:6333/healthz > /dev/null 2>&1 && echo "  Qdrant: ready" || { echo "  Qdrant: not ready yet"; READY=false; }
-curl -sf http://localhost:9200 > /dev/null 2>&1 && echo "  OpenSearch: ready" || { echo "  OpenSearch: not ready yet"; READY=false; }
-curl -sf http://localhost:7474 > /dev/null 2>&1 && echo "  Neo4j: ready" || { echo "  Neo4j: not ready yet"; READY=false; }
-
-if [ "$READY" = false ]; then
+    # Health checks
+    curl -sf http://localhost:6333/healthz > /dev/null 2>&1 && echo "  Qdrant: ready" || echo "  Qdrant: not ready yet (wait ~30s)"
+    curl -sf http://localhost:7474 > /dev/null 2>&1 && echo "  Neo4j: ready" || echo "  Neo4j: not ready yet (wait ~30s)"
+else
     echo ""
-    echo "  Some databases are still starting. Wait ~30s and they should be ready."
+    echo "Docker not found — skipping optional databases."
+    echo "  k-os works fully with keyword search (SQLite FTS5, built-in)."
+    echo "  For semantic search + graph traversal, install Docker and run:"
+    echo "    docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml up -d"
 fi
 
 echo ""
 echo "=== Installation complete ==="
 echo ""
 echo "Usage from any directory:"
-echo "  k-os -w /path/to/vault rebuild -v     # index a vault"
-echo "  k-os query \"your question\" --live     # query knowledge"
+echo "  k-os -w /path/to/vault rebuild -v     # index a folder"
+echo "  k-os query \"your question\"             # query knowledge (returns file pointers)"
 echo ""
 echo "In any AI CLI:"
 echo "  Claude Code:   /k-os what is cryptography"

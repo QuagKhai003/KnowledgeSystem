@@ -1,5 +1,6 @@
-"""Full pipeline orchestrator: scan → parse → compile → index → retrieve → format."""
+"""Full pipeline orchestrator: scan → parse → compile → index → query (pointers)."""
 
+import json
 import time
 from pathlib import Path
 
@@ -9,24 +10,14 @@ from src.ingestion.parsers import parse_file
 from src.compiler.pipeline import CompilerPipeline
 from src.compiler.ontology_val import OntologyValidator
 from src.compiler.schemas import KnowledgeObject
-from src.indexing.manager import IndexManager
-from src.indexing.embeddings import EmbeddingModel
+from src.indexing.fts_index import FTSIndex
 from src.planner import QueryPlanner
-from src.retrieval.coordinator import RetrievalCoordinator
-from src.retrieval.context_builder import ContextBuilder
-from src.adapters import get_adapter
 
 
 def _connect_qdrant(config: dict):
     from src.indexing.qdrant_client import QdrantIndex
     db_cfg = config["databases"]["qdrant"]
     return QdrantIndex(host=db_cfg["host"], port=db_cfg["port"])
-
-
-def _connect_opensearch(config: dict):
-    from src.indexing.opensearch_cli import OpenSearchIndex
-    db_cfg = config["databases"]["opensearch"]
-    return OpenSearchIndex(host=db_cfg["host"], port=db_cfg["port"])
 
 
 def _connect_neo4j(config: dict):
@@ -48,42 +39,38 @@ class KnowledgePipeline:
         self.compiler = CompilerPipeline()
         self.validator = OntologyValidator()
         self.planner = QueryPlanner()
-        self._index_manager = None
-        self._retrieval = None
+        self._fts = None
+        self._qdrant = None
+        self._neo4j = None
         self._embedder = None
 
-    def _get_embedder(self) -> EmbeddingModel:
+    @property
+    def fts(self) -> FTSIndex:
+        if self._fts is None:
+            self._fts = FTSIndex()
+        return self._fts
+
+    def _try_qdrant(self):
+        if self._qdrant is None:
+            try:
+                self._qdrant = _connect_qdrant(self.config)
+            except Exception:
+                self._qdrant = False
+        return self._qdrant if self._qdrant is not False else None
+
+    def _try_neo4j(self):
+        if self._neo4j is None:
+            try:
+                self._neo4j = _connect_neo4j(self.config)
+            except Exception:
+                self._neo4j = False
+        return self._neo4j if self._neo4j is not False else None
+
+    def _get_embedder(self):
         if self._embedder is None:
+            from src.indexing.embeddings import EmbeddingModel
             self._embedder = EmbeddingModel()
         return self._embedder
-
-    @property
-    def index_manager(self) -> IndexManager:
-        if self._index_manager is None:
-            qdrant = _connect_qdrant(self.config)
-            opensearch = _connect_opensearch(self.config)
-            neo4j = _connect_neo4j(self.config)
-            self._index_manager = IndexManager(
-                embedding_model=self._get_embedder(),
-                qdrant=qdrant,
-                opensearch=opensearch,
-                neo4j=neo4j,
-            )
-        return self._index_manager
-
-    @property
-    def retrieval(self) -> RetrievalCoordinator:
-        if self._retrieval is None:
-            qdrant = _connect_qdrant(self.config)
-            opensearch = _connect_opensearch(self.config)
-            neo4j = _connect_neo4j(self.config)
-            self._retrieval = RetrievalCoordinator(
-                qdrant=qdrant,
-                opensearch=opensearch,
-                neo4j=neo4j,
-                embedder=self._get_embedder(),
-            )
-        return self._retrieval
 
     def scan_and_parse(self, verbose: bool = False) -> list[dict]:
         """Phase 1: Scan workspace and parse changed files."""
@@ -142,17 +129,51 @@ class KnowledgePipeline:
         return objects
 
     def index(self, objects: list[KnowledgeObject], verbose: bool = False) -> dict:
-        """Phase 3: Index Knowledge Objects into all databases + local store."""
+        """Phase 3: Index into SQLite FTS5 (always) + Qdrant/Neo4j (if available)."""
         stats = {"indexed": 0, "failed": 0, "errors": []}
         global_db = StateDB(self._global_store_path())
+        qdrant = self._try_qdrant()
+        neo4j = self._try_neo4j()
+        embedder = self._get_embedder() if qdrant else None
 
         for obj in objects:
             try:
-                result = self.index_manager.index_object(obj)
-                if any(result.values()):
-                    stats["indexed"] += 1
-                else:
-                    stats["failed"] += 1
+                sections = obj.abstractions.level_1
+                keywords = obj.abstractions.level_3
+                embed_text = f"{obj.name} | {obj.abstractions.level_2} | {keywords}"
+
+                self.fts.index_document({
+                    "id": obj.id,
+                    "type": obj.type,
+                    "name": obj.name,
+                    "content": embed_text,
+                    "tags": obj.tags,
+                    "file_path": obj.source_file,
+                    "domain": obj.domain,
+                    "sections": sections,
+                    "keywords": keywords,
+                })
+
+                if qdrant and embedder:
+                    try:
+                        vector = embedder.embed(embed_text)
+                        payload = {
+                            "type": obj.type,
+                            "name": obj.name,
+                            "domain": obj.domain,
+                            "tags": obj.tags,
+                            "file_path": obj.source_file,
+                        }
+                        qdrant.upsert(obj.id, vector, payload)
+                    except Exception:
+                        pass
+
+                if neo4j:
+                    try:
+                        neo4j.sync_knowledge_object(obj)
+                    except Exception:
+                        pass
+
                 global_db.store_knowledge_object(
                     obj.id, obj.name,
                     obj.abstractions.level_0,
@@ -160,6 +181,8 @@ class KnowledgePipeline:
                     obj.abstractions.level_2,
                     obj.abstractions.level_3,
                 )
+                stats["indexed"] += 1
+
             except Exception as e:
                 stats["failed"] += 1
                 stats["errors"].append(f"{obj.id}: {e}")
@@ -171,70 +194,45 @@ class KnowledgePipeline:
         return stats
 
     def query(self, query_text: str, model: str = "default", verbose: bool = False) -> str:
-        """Two-phase retrieval: locate documents, then extract relevant passages."""
-        from src.retrieval.rerank import rrf_merge
-        from src.retrieval.passage_extractor import extract_passages, Passage
+        """Query returns pointers: file paths + matched terms + sections."""
+        results = self.fts.search(query_text, limit=10)
 
-        plan = self.planner.plan(query_text, target_model=model)
-
-        # Phase 1: Locate — search L2/L3 across all databases to find relevant documents
-        multi_results = self.retrieval.execute(plan)
-
-        weights = {
-            "dense": plan.dense_weight,
-            "sparse": plan.sparse_weight,
-            "graph": plan.graph_weight,
-        }
-        merged = rrf_merge(multi_results, weights=weights, k=60)
-        top_ids = [r.id for r in merged[:plan.max_results]]
-
-        # Phase 2: Extract — fetch L0/L1 from global knowledge store
         global_db = StateDB(self._global_store_path())
-        ko_store = global_db.get_knowledge_objects_batch(top_ids)
+        obj_ids = [r["id"] for r in results]
+        ko_store = global_db.get_knowledge_objects_batch(obj_ids)
         global_db.close()
 
-        builder = ContextBuilder()
-        blocks = []
+        pointers = []
+        seen_files = set()
 
-        for result in merged[:plan.max_results]:
-            ko = ko_store.get(result.id)
-            if ko and ko["level_0"]:
-                passages = extract_passages(
-                    query=query_text,
-                    level_0=ko["level_0"],
-                    level_1=ko["level_1"],
-                    max_passages=3,
-                    passage_window=800,
-                )
-                if passages:
-                    content = "\n\n".join(
-                        f"[{p.section}]\n{p.text}" for p in passages
-                    )
-                    from src.retrieval.context_builder import ContextBlock
-                    blocks.append(ContextBlock(
-                        id=result.id,
-                        title=ko["name"],
-                        content=content,
-                        abstraction_level=0,
-                        sources=result.sources,
-                    ))
-                    continue
+        for r in results:
+            file_path = r["file_path"]
+            if not file_path or file_path in seen_files:
+                continue
+            seen_files.add(file_path)
 
-            block = builder._build_block(result, result.payload, ["level_2", "level_3"])
-            if block:
-                blocks.append(block)
+            ko = ko_store.get(r["id"], {})
+            matched_terms = self._extract_matched_terms(query_text, r, ko)
 
-        blocks = builder._fit_to_budget(blocks, plan.max_token_budget)
+            pointer = {
+                "file": file_path,
+                "name": r["name"],
+                "why": matched_terms,
+                "sections": [s.strip() for s in r["sections"].split(";")[:5] if s.strip()],
+                "score": round(r["score"], 3),
+                "domain": r["domain"],
+            }
+            pointers.append(pointer)
 
+        from src.adapters import get_adapter
         adapter = get_adapter(model)
-        relationships = self._extract_relationships_from_results(multi_results)
-        formatted = adapter.format(blocks, query_text, relationships or None)
-
-        return formatted
+        return adapter.format_pointers(pointers, query_text)
 
     def full_rebuild(self, verbose: bool = False) -> dict:
         """Run complete pipeline: scan → compile → index."""
         start = time.time()
+
+        self.fts.wipe()
 
         if verbose:
             print("Phase 1: Scanning and parsing...")
@@ -259,20 +257,23 @@ class KnowledgePipeline:
         }
 
     def _global_store_path(self) -> Path:
-        """Global knowledge store shared across all workspaces."""
         store_dir = Path.home() / ".k-os"
         store_dir.mkdir(parents=True, exist_ok=True)
         return store_dir / "knowledge_store.db"
 
-    def _extract_relationships_from_results(self, multi_results: dict) -> list[dict]:
-        """Extract relationship data from graph retrieval results."""
-        rels = []
-        for result in multi_results.get("graph", []):
-            payload = result.payload
-            if "source" in payload and "target" in payload:
-                rels.append({
-                    "source": payload["source"],
-                    "target": payload["target"],
-                    "predicate": payload.get("predicate", "related_to"),
-                })
-        return rels
+    def _extract_matched_terms(self, query: str, result: dict, ko: dict) -> str:
+        """Find which terms from the result matched the query context."""
+        query_words = set(query.lower().split())
+        keywords = result.get("keywords", "") or ko.get("level_3", "")
+        keyword_list = [k.strip() for k in keywords.split(";") if k.strip()]
+
+        matched = []
+        for kw in keyword_list:
+            kw_words = set(kw.lower().split())
+            if kw_words & query_words:
+                matched.append(kw)
+
+        if not matched:
+            matched = keyword_list[:5]
+
+        return ", ".join(matched[:8])

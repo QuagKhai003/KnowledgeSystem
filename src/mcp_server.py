@@ -151,7 +151,7 @@ def handle_query(params: dict) -> str:
         context = pipeline.query(query, model=model)
         return context
     except Exception as e:
-        return f"Query failed: {e}\nAre databases running? Try: docker compose -f {install_dir}/docker/docker-compose.yml up -d"
+        return f"Query failed: {e}\nHave you rebuilt? Try: k-os -w /path/to/folder rebuild -v"
 
 
 def handle_scan(params: dict) -> str:
