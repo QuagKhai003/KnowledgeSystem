@@ -174,6 +174,31 @@ if [ -d "$HOME/.continue" ]; then
     configure_mcp "Continue" "$CONTINUE_MCP" "mcpServers.knowledge-os"
 fi
 
+# Codex CLI (OpenAI) — TOML config
+CODEX_CONFIG="$HOME/.codex/config.toml"
+if [ -d "$HOME/.codex" ] || command -v codex &> /dev/null; then
+    mkdir -p "$HOME/.codex"
+    # Append MCP server block if not already present
+    if [ -f "$CODEX_CONFIG" ] && grep -q "mcp_servers.knowledge-os" "$CODEX_CONFIG" 2>/dev/null; then
+        echo "  Codex CLI: already configured"
+    else
+        cat >> "$CODEX_CONFIG" << EOF
+
+[mcp_servers.knowledge-os]
+enabled = true
+command = "${PYTHON_BIN}"
+args = ["${MCP_SCRIPT}"]
+EOF
+        echo "  Codex CLI: configured"
+    fi
+fi
+
+# Antigravity (Google/Gemini CLI) — MCP server
+ANTIGRAVITY_MCP="$HOME/.gemini/config/mcp_config.json"
+if [ -d "$HOME/.gemini" ] || command -v antigravity &> /dev/null || [ -d "$HOME/.antigravitycli" ]; then
+    configure_mcp "Antigravity" "$ANTIGRAVITY_MCP" "mcpServers.knowledge-os"
+fi
+
 # 5. Set up Python virtual environment and install dependencies
 if [ ! -d "${INSTALL_DIR}/.venv" ]; then
     echo "Setting up Python venv..."
@@ -218,9 +243,11 @@ echo "  k-os -w /path/to/vault rebuild -v     # index a vault"
 echo "  k-os query \"your question\" --live     # query knowledge"
 echo ""
 echo "In any AI CLI:"
-echo "  Claude Code:  /k-os what is cryptography"
-echo "  Cursor:       uses k-os tools automatically (MCP)"
-echo "  Windsurf:     uses k-os tools automatically (MCP)"
-echo "  Continue:     uses k-os tools automatically (MCP)"
+echo "  Claude Code:   /k-os what is cryptography"
+echo "  Cursor:        uses k-os tools automatically (MCP)"
+echo "  Windsurf:      uses k-os tools automatically (MCP)"
+echo "  Continue:      uses k-os tools automatically (MCP)"
+echo "  Codex CLI:     uses k-os tools automatically (MCP)"
+echo "  Antigravity:   uses k-os tools automatically (MCP)"
 echo ""
 echo "Config: $CONFIG_FILE"

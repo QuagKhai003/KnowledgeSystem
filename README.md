@@ -75,18 +75,24 @@ k-os query "What is cryptography?" --live
 
 ## AI CLI Integration
 
-**Claude Code** — after install, type `/k-os your question` in any conversation.
+The install script auto-detects and configures all supported AI CLIs:
 
-**MCP Server** — works with Claude Code, Cursor, VS Code, and any MCP-compatible tool:
-```bash
-# Show MCP config to add to your AI CLI settings
-k-os install --mcp
-
-# Start MCP server directly
-k-os mcp
-```
+| AI CLI | Integration | How to use |
+|--------|-------------|-----------|
+| Claude Code | Slash command + MCP | `/k-os your question` |
+| Cursor | MCP server | AI sees k-os tools automatically |
+| Windsurf | MCP server | AI sees k-os tools automatically |
+| Continue (VS Code) | MCP server | AI sees k-os tools automatically |
+| Codex CLI (OpenAI) | MCP server | AI sees k-os tools automatically |
+| Antigravity (Google) | MCP server | AI sees k-os tools automatically |
 
 The MCP server exposes 5 tools: `k-os-query`, `k-os-scan`, `k-os-compile`, `k-os-rebuild`, `k-os-status`.
+
+```bash
+# Manual MCP setup (if needed)
+k-os install --mcp    # shows JSON/TOML config to paste
+k-os mcp              # start MCP server directly
+```
 
 ## Project Structure
 

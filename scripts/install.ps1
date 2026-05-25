@@ -163,6 +163,36 @@ if (Test-Path "$env:USERPROFILE\.continue") {
     Configure-MCP "Continue" "$env:USERPROFILE\.continue\config.json" "mcpServers.knowledge-os"
 }
 
+# Codex CLI (OpenAI) — TOML config
+$CODEX_CONFIG = "$env:USERPROFILE\.codex\config.toml"
+if ((Test-Path "$env:USERPROFILE\.codex") -or ($null -ne (Get-Command codex -ErrorAction SilentlyContinue))) {
+    if (-not (Test-Path "$env:USERPROFILE\.codex")) {
+        New-Item -ItemType Directory -Path "$env:USERPROFILE\.codex" -Force | Out-Null
+    }
+    $codexContent = ""
+    if (Test-Path $CODEX_CONFIG) {
+        $codexContent = Get-Content $CODEX_CONFIG -Raw
+    }
+    if ($codexContent -notlike "*mcp_servers.knowledge-os*") {
+        $tomlBlock = @"
+
+[mcp_servers.knowledge-os]
+enabled = true
+command = "$PYTHON_BIN"
+args = ["$MCP_SCRIPT"]
+"@
+        Add-Content -Path $CODEX_CONFIG -Value $tomlBlock
+        Write-Host "  Codex CLI: configured"
+    } else {
+        Write-Host "  Codex CLI: already configured"
+    }
+}
+
+# Antigravity (Google/Gemini CLI) — MCP server
+if ((Test-Path "$env:USERPROFILE\.gemini") -or ($null -ne (Get-Command antigravity -ErrorAction SilentlyContinue)) -or (Test-Path "$env:USERPROFILE\.antigravitycli")) {
+    Configure-MCP "Antigravity" "$env:USERPROFILE\.gemini\config\mcp_config.json" "mcpServers.knowledge-os"
+}
+
 # 5. Set up Python virtual environment and install dependencies
 if (-not (Test-Path "$INSTALL_DIR\.venv")) {
     Write-Host "Setting up Python venv..."
@@ -211,10 +241,12 @@ Write-Host "  k-os -w C:\path\to\vault rebuild -v     # index a vault"
 Write-Host '  k-os query "your question" --live        # query knowledge'
 Write-Host ""
 Write-Host "In any AI CLI:"
-Write-Host "  Claude Code:  /k-os what is cryptography"
-Write-Host "  Cursor:       uses k-os tools automatically (MCP)"
-Write-Host "  Windsurf:     uses k-os tools automatically (MCP)"
-Write-Host "  Continue:     uses k-os tools automatically (MCP)"
+Write-Host "  Claude Code:   /k-os what is cryptography"
+Write-Host "  Cursor:        uses k-os tools automatically (MCP)"
+Write-Host "  Windsurf:      uses k-os tools automatically (MCP)"
+Write-Host "  Continue:      uses k-os tools automatically (MCP)"
+Write-Host "  Codex CLI:     uses k-os tools automatically (MCP)"
+Write-Host "  Antigravity:   uses k-os tools automatically (MCP)"
 Write-Host ""
 Write-Host "Config: $CONFIG_FILE"
 Write-Host ""
