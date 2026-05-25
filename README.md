@@ -23,34 +23,29 @@ Raw Notes → Parser → Knowledge Objects → Ontology → Graph → Abstractio
 ## Quick Start
 
 ```bash
-# Install dependencies
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+# After install, index any folder
+k-os -w /path/to/your/vault rebuild -v
 
-# Run tests (no external services needed)
-pytest tests/ -v
+# Query your knowledge from anywhere
+k-os query "What is cryptography?" --live
 
-# Start databases (when ready for live retrieval)
-docker compose -f docker/docker-compose.yml up -d
+# In Claude Code (any project)
+/k-os what is cryptography
 ```
 
-## Global Install
+## Install
 
-Install once, use from any directory in any AI CLI:
+Prerequisites: [Docker Desktop](https://www.docker.com/products/docker-desktop/), Python 3.11+, Git.
 
 ```bash
-# macOS / Linux / WSL
-bash scripts/install.sh
+# macOS / Linux / WSL / Git Bash
+curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash
 
-# Windows (PowerShell)
-powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+# Windows (PowerShell 5.1+)
+irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
 ```
 
-This creates:
-- `~/.k-os/config.yaml` — global config (default vault, database settings)
-- `k-os` command in PATH — callable from any directory
-- `/k-os` slash command in Claude Code
+That's it. One command handles: clone, venv, dependencies, global CLI, databases, and Claude Code integration.
 
 ## CLI Usage
 
