@@ -1,6 +1,8 @@
 """Compiler pipeline: transforms Phase 1 parser output into Knowledge Objects."""
 
+import math
 import re
+from collections import Counter
 from pathlib import Path
 
 from .schemas import KnowledgeObject, Abstraction, Relationship
@@ -46,6 +48,7 @@ class CompilerPipeline:
             level_1 = self._build_level_1_from_text(level_0)
 
         level_2 = self._build_level_2_summary(name, level_0, tags)
+        level_3 = self._build_level_3_keywords(level_0)
 
         domain = self._infer_domain(tags) or self._infer_domain_from_name(name)
 
@@ -55,7 +58,7 @@ class CompilerPipeline:
             name=name,
             domain=domain,
             source_file=file_path,
-            abstractions=Abstraction(level_0=level_0, level_1=level_1, level_2=level_2),
+            abstractions=Abstraction(level_0=level_0, level_1=level_1, level_2=level_2, level_3=level_3),
             ontology_class="Concept",
             ontology_depth=3,
             tags=tags,
@@ -176,12 +179,14 @@ class CompilerPipeline:
         if not level_1 and outline:
             level_1 = "; ".join(o["title"] for o in outline)
 
+        level_3 = self._build_level_3_keywords(level_0)
+
         concept = KnowledgeObject(
             id=concept_id,
             type="reference",
             name=file_name,
             source_file=file_path,
-            abstractions=Abstraction(level_0=level_0, level_1=level_1),
+            abstractions=Abstraction(level_0=level_0, level_1=level_1, level_3=level_3),
             ontology_class="Reference",
             ontology_depth=3,
         )
@@ -250,13 +255,13 @@ class CompilerPipeline:
             r'▪\s*(.+?)(?:\n|$)',
             r'(?:is|are|means?|refers?\s+to|defined?\s+as)\s+(.{20,120}?)[.\n]',
         ]:
-            matches = re.findall(pattern, text[:5000])
-            for m in matches[:10]:
+            matches = re.findall(pattern, text)
+            for m in matches[:15]:
                 cleaned = m.strip() if isinstance(m, str) else m
                 if len(cleaned) > 5:
                     keywords.add(cleaned)
 
-        bullet_points = re.findall(r'▪\s*(.+?)(?:\n|$)', text[:5000])
+        bullet_points = re.findall(r'▪\s*(.+?)(?:\n|$)', text)
         key_points = [bp.strip() for bp in bullet_points if len(bp.strip()) > 10][:8]
 
         parts = [f"{name}."]
@@ -267,13 +272,90 @@ class CompilerPipeline:
             parts.append("Covers: " + ", ".join(top_kw))
 
         paragraphs = [p.strip() for p in text.split("\n\n") if len(p.strip()) > 80]
-        if paragraphs:
-            first_meaningful = paragraphs[0]
-            first_sentence = re.split(r'[.!?]\s', first_meaningful)[0].strip()
+        sampled = self._sample_passages(paragraphs)
+        for p in sampled:
+            first_sentence = re.split(r'[.!?]\s', p)[0].strip()
             if len(first_sentence) > 30:
                 parts.append(first_sentence[:200])
 
-        return " ".join(parts)[:500]
+        return " ".join(parts)[:800]
+
+    def _sample_passages(self, paragraphs: list[str], n: int = 3) -> list[str]:
+        """Sample passages from beginning, middle, and end of document."""
+        if not paragraphs:
+            return []
+        if len(paragraphs) <= n:
+            return paragraphs
+        indices = [0, len(paragraphs) // 2, len(paragraphs) - 1]
+        return [paragraphs[i] for i in indices]
+
+    def _build_level_3_keywords(self, text: str) -> str:
+        """TF-IDF keyword extraction across the entire document. No AI needed."""
+        if not text or len(text) < 50:
+            return ""
+
+        STOP_WORDS = {
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
+            "have", "has", "had", "do", "does", "did", "will", "would", "could",
+            "should", "may", "might", "shall", "can", "need", "must", "ought",
+            "i", "you", "he", "she", "it", "we", "they", "me", "him", "her",
+            "us", "them", "my", "your", "his", "its", "our", "their", "mine",
+            "yours", "hers", "ours", "theirs", "this", "that", "these", "those",
+            "and", "but", "or", "nor", "not", "so", "yet", "both", "either",
+            "neither", "each", "every", "all", "any", "few", "more", "most",
+            "other", "some", "such", "no", "only", "same", "than", "too", "very",
+            "just", "because", "as", "until", "while", "of", "at", "by", "for",
+            "with", "about", "against", "between", "through", "during", "before",
+            "after", "above", "below", "to", "from", "up", "down", "in", "out",
+            "on", "off", "over", "under", "again", "further", "then", "once",
+            "here", "there", "when", "where", "why", "how", "what", "which",
+            "who", "whom", "if", "also", "like", "going", "know", "think",
+            "really", "right", "get", "got", "go", "one", "two", "even",
+            "well", "back", "much", "many", "still", "now", "way", "look",
+            "make", "come", "see", "take", "want", "give", "use", "say", "said",
+            "thing", "things", "people", "something", "lot", "actually", "kind",
+        }
+
+        words = re.findall(r'\b[a-z]{3,}\b', text.lower())
+        words = [w for w in words if w not in STOP_WORDS]
+
+        tf = Counter(words)
+        total = len(words) if words else 1
+
+        bigrams = []
+        raw_words = re.findall(r'\b[a-zA-Z]{3,}\b', text)
+        for i in range(len(raw_words) - 1):
+            w1, w2 = raw_words[i].lower(), raw_words[i + 1].lower()
+            if w1 not in STOP_WORDS and w2 not in STOP_WORDS:
+                bigrams.append(f"{w1} {w2}")
+        bigram_counts = Counter(bigrams)
+
+        scored = {}
+        for word, count in tf.items():
+            freq = count / total
+            boost = 1 + math.log(count) if count > 1 else 1
+            scored[word] = freq * boost
+
+        for bigram, count in bigram_counts.items():
+            if count >= 2:
+                scored[bigram] = (count / total) * (1 + math.log(count)) * 2
+
+        proper_nouns = re.findall(r'\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b', text)
+        proper_counts = Counter(proper_nouns)
+        for noun, count in proper_counts.items():
+            if count >= 2 and len(noun) > 3:
+                key = noun.lower()
+                scored[key] = scored.get(key, 0) + (count / total) * 3
+
+        doc_type_patterns = re.findall(
+            r'\b(guest lecture|keynote|seminar|workshop|tutorial|transcript|presentation|interview)\b',
+            text.lower(),
+        )
+        for phrase in doc_type_patterns:
+            scored[phrase] = scored.get(phrase, 0) + 0.05
+
+        top = sorted(scored.items(), key=lambda x: x[1], reverse=True)[:100]
+        return "; ".join(term for term, _ in top)
 
     def _infer_domain_from_name(self, name: str) -> str:
         name_lower = name.lower()

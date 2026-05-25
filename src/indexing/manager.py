@@ -123,6 +123,8 @@ class IndexManager:
             parts.append(obj.abstractions.level_1)
         elif obj.abstractions.level_0:
             parts.append(obj.abstractions.level_0[:2000])
+        if obj.abstractions.level_3:
+            parts.append(obj.abstractions.level_3)
         if obj.tags:
             parts.append(" ".join(obj.tags))
         return " | ".join(parts)

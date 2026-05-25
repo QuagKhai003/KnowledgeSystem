@@ -48,7 +48,7 @@ class Neo4jClient:
                 "SET n.name = $name, n.domain = $domain, "
                 "n.ontology_class = $ontology_class, n.depth = $depth, "
                 "n.source_file = $source_file, "
-                "n.level_1 = $level_1, n.level_2 = $level_2",
+                "n.level_1 = $level_1, n.level_2 = $level_2, n.level_3 = $level_3",
                 id=obj.id,
                 name=obj.name,
                 domain=obj.domain,
@@ -57,6 +57,7 @@ class Neo4jClient:
                 source_file=obj.source_file,
                 level_1=obj.abstractions.level_1,
                 level_2=obj.abstractions.level_2,
+                level_3=obj.abstractions.level_3,
             )
 
     def upsert_relationship(self, source_id: str, target_id: str, predicate: str):
