@@ -25,6 +25,16 @@ class StateDB:
                 status TEXT NOT NULL
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS knowledge_store (
+                object_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                level_0 TEXT,
+                level_1 TEXT,
+                level_2 TEXT,
+                level_3 TEXT
+            )
+        """)
         self._conn.commit()
 
     def get_hash(self, file_path: str) -> Optional[str]:
@@ -61,6 +71,53 @@ class StateDB:
             "SELECT file_path FROM file_state WHERE status != 'DELETED'"
         ).fetchall()
         return {row["file_path"] for row in rows}
+
+    def store_knowledge_object(self, obj_id: str, name: str, l0: str, l1: str, l2: str, l3: str):
+        self._conn.execute("""
+            INSERT INTO knowledge_store (object_id, name, level_0, level_1, level_2, level_3)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(object_id) DO UPDATE SET
+                name = excluded.name,
+                level_0 = excluded.level_0,
+                level_1 = excluded.level_1,
+                level_2 = excluded.level_2,
+                level_3 = excluded.level_3
+        """, (obj_id, name, l0, l1, l2, l3))
+
+    def get_knowledge_object(self, obj_id: str) -> dict | None:
+        row = self._conn.execute(
+            "SELECT * FROM knowledge_store WHERE object_id = ?", (obj_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "object_id": row["object_id"],
+            "name": row["name"],
+            "level_0": row["level_0"] or "",
+            "level_1": row["level_1"] or "",
+            "level_2": row["level_2"] or "",
+            "level_3": row["level_3"] or "",
+        }
+
+    def get_knowledge_objects_batch(self, obj_ids: list[str]) -> dict[str, dict]:
+        if not obj_ids:
+            return {}
+        placeholders = ",".join("?" * len(obj_ids))
+        rows = self._conn.execute(
+            f"SELECT * FROM knowledge_store WHERE object_id IN ({placeholders})",
+            obj_ids,
+        ).fetchall()
+        return {
+            row["object_id"]: {
+                "object_id": row["object_id"],
+                "name": row["name"],
+                "level_0": row["level_0"] or "",
+                "level_1": row["level_1"] or "",
+                "level_2": row["level_2"] or "",
+                "level_3": row["level_3"] or "",
+            }
+            for row in rows
+        }
 
     def close(self):
         self._conn.close()

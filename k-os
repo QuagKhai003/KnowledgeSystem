@@ -183,44 +183,17 @@ def cmd_status(args):
 
 
 def cmd_query(args):
-    """Plan and execute a knowledge query with live retrieval."""
-    from src.planner import QueryPlanner
-    from src.adapters import get_adapter
+    """Search the knowledge index and return file pointers."""
+    from src.pipeline import KnowledgePipeline
+    config = load_config(args.workspace)
+    pipeline = KnowledgePipeline(config)
 
-    planner = QueryPlanner()
-    metadata = planner.plan_with_metadata(args.query, target_model=args.model)
-
-    from src.adapters.base_adapter import detect_cli
-    resolved = detect_cli() if args.model in ("auto", "default") else args.model
-
-    print(f"Query:  {metadata['query']}")
-    print(f"Intent: {metadata['intent']} (confidence: {metadata['confidence']:.0%})")
-    print(f"Adapter: {resolved}" + (" (auto-detected)" if args.model in ("auto", "default") else ""))
-    plan = metadata["plan"]
-    print(f"Plan:")
-    print(f"  Dense: {'ON' if plan['dense_vector'] else 'OFF'} (weight={plan['weights']['dense']})")
-    print(f"  Sparse: {'ON' if plan['sparse_keyword'] else 'OFF'} (weight={plan['weights']['sparse']})")
-    print(f"  Graph: hops={plan['graph_max_hops']}")
-    print(f"  Abstractions: {plan['target_abstractions']}")
-    print(f"  Budget: {plan['max_token_budget']} tokens")
-    if plan["force_exact_matches"]:
-        print(f"  Exact matches: {plan['force_exact_matches']}")
-
-    if args.live:
-        from src.pipeline import KnowledgePipeline
-        config = load_config(args.workspace)
-        pipeline = KnowledgePipeline(config)
-        print("\nExecuting retrieval...")
-        try:
-            context = pipeline.query(args.query, model=args.model, verbose=args.verbose)
-            print(f"\n--- Context ({len(context)} chars) ---\n")
-            print(context)
-        except Exception as e:
-            print(f"\nRetrieval failed: {e}")
-            print("Are databases running? Try: ./scripts/db_setup.sh")
-
-    if args.json:
-        print(json.dumps(metadata, indent=2))
+    try:
+        result = pipeline.query(args.query, model=args.model, verbose=args.verbose)
+        print(result)
+    except Exception as e:
+        print(f"Query failed: {e}")
+        print("Have you rebuilt? Try: k-os -w /path/to/folder rebuild -v")
 
 
 def cmd_mcp(args):
@@ -300,11 +273,10 @@ def main():
     subparsers.add_parser("status", help="Show state database summary")
 
     # query
-    query_p = subparsers.add_parser("query", help="Plan and execute a knowledge query")
+    query_p = subparsers.add_parser("query", help="Search knowledge index and return file pointers")
     query_p.add_argument("query", help="Natural language query")
     query_p.add_argument("-m", "--model", default="auto", help="Output adapter (auto/claude/gpt/codex/qwen/gemini). Default: auto-detect from AI CLI")
-    query_p.add_argument("--json", action="store_true", help="Output full plan as JSON")
-    query_p.add_argument("--live", action="store_true", help="Execute retrieval against databases")
+    query_p.add_argument("--live", action="store_true", help="(kept for backwards compatibility)")
     query_p.add_argument("-v", "--verbose", action="store_true")
 
     # mcp
