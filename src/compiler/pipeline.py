@@ -10,7 +10,7 @@ from .ontology_val import OntologyValidator
 
 def _slugify(name: str) -> str:
     slug = re.sub(r"[^\w\s-]", "", name.lower())
-    return re.sub(r"[\s-]+", "_", slug).strip("_")
+    return re.sub(r"[\s-]+", "_", slug).strip("_")[:200]
 
 
 class CompilerPipeline:

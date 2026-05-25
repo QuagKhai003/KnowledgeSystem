@@ -128,10 +128,19 @@ TOOLS = [
 ]
 
 
+def _require(params: dict, *keys: str):
+    """Validate required parameters are present and non-empty."""
+    for key in keys:
+        if key not in params or not str(params[key]).strip():
+            raise ValueError(f"Missing required parameter: {key}")
+
+
 def handle_query(params: dict) -> str:
+    _require(params, "query")
     install_dir = _get_install_dir()
     sys.path.insert(0, str(install_dir))
 
+    query = str(params["query"])[:10000]
     config = _load_project_config(params.get("workspace"))
     model = params.get("model", "claude")
 
@@ -139,13 +148,14 @@ def handle_query(params: dict) -> str:
     pipeline = KnowledgePipeline(config)
 
     try:
-        context = pipeline.query(params["query"], model=model)
+        context = pipeline.query(query, model=model)
         return context
     except Exception as e:
         return f"Query failed: {e}\nAre databases running? Try: docker compose -f {install_dir}/docker/docker-compose.yml up -d"
 
 
 def handle_scan(params: dict) -> str:
+    _require(params, "workspace")
     install_dir = _get_install_dir()
     sys.path.insert(0, str(install_dir))
 
@@ -160,6 +170,7 @@ def handle_scan(params: dict) -> str:
 
 
 def handle_compile(params: dict) -> str:
+    _require(params, "workspace")
     install_dir = _get_install_dir()
     sys.path.insert(0, str(install_dir))
 
@@ -175,6 +186,7 @@ def handle_compile(params: dict) -> str:
 
 
 def handle_rebuild(params: dict) -> str:
+    _require(params, "workspace")
     install_dir = _get_install_dir()
     sys.path.insert(0, str(install_dir))
 
