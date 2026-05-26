@@ -236,6 +236,23 @@ class KnowledgePipeline:
         adapter = get_adapter(model)
         return adapter.format_pointers(pointers, query_text)
 
+    def incremental_update(self, verbose: bool = False) -> dict:
+        """Scan for new/changed files and index only the delta."""
+        scan_results = self.scan_and_parse(verbose=verbose)
+        if not scan_results:
+            return {"files_scanned": 0, "objects_compiled": 0, "objects_indexed": 0}
+
+        objects = self.compile(scan_results, verbose=verbose)
+        if not objects:
+            return {"files_scanned": len(scan_results), "objects_compiled": 0, "objects_indexed": 0}
+
+        index_stats = self.index(objects, verbose=verbose)
+        return {
+            "files_scanned": len(scan_results),
+            "objects_compiled": len(objects),
+            "objects_indexed": index_stats["indexed"],
+        }
+
     def full_rebuild(self, verbose: bool = False) -> dict:
         """Run complete pipeline: scan → compile → index."""
         start = time.time()

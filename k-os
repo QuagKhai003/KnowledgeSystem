@@ -10,6 +10,33 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+WORKSPACES_FILE = Path.home() / ".k-os" / "workspaces.json"
+
+
+def register_workspace(workspace_path: str):
+    """Record a workspace path so query can auto-update it later."""
+    WORKSPACES_FILE.parent.mkdir(parents=True, exist_ok=True)
+    workspaces = []
+    if WORKSPACES_FILE.exists():
+        try:
+            workspaces = json.loads(WORKSPACES_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            workspaces = []
+    resolved = str(Path(workspace_path).resolve())
+    if resolved not in workspaces:
+        workspaces.append(resolved)
+        WORKSPACES_FILE.write_text(json.dumps(workspaces))
+
+
+def get_registered_workspaces() -> list[str]:
+    if not WORKSPACES_FILE.exists():
+        return []
+    try:
+        return json.loads(WORKSPACES_FILE.read_text())
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
 def load_global_config() -> dict:
     """Load global config from ~/.k-os/config.yaml if it exists."""
     global_path = Path.home() / ".k-os" / "config.yaml"
@@ -166,6 +193,7 @@ def cmd_rebuild(args):
 
     pipeline = KnowledgePipeline(config)
     result = pipeline.full_rebuild(verbose=args.verbose)
+    register_workspace(config["workspace"]["root"])
 
     print(f"\n=== Rebuild Complete ===")
     print(f"  Files scanned:    {result['files_scanned']}")
@@ -198,9 +226,32 @@ def cmd_status(args):
     print(f"  Deleted: {row[2]}")
 
 
+def _auto_update(verbose: bool = False):
+    """Incrementally update all registered workspaces before query."""
+    from src.pipeline import KnowledgePipeline
+    workspaces = get_registered_workspaces()
+    total_indexed = 0
+    for ws in workspaces:
+        if not Path(ws).is_dir():
+            continue
+        try:
+            config = load_config(ws)
+            pipeline = KnowledgePipeline(config)
+            stats = pipeline.incremental_update(verbose=verbose)
+            total_indexed += stats["objects_indexed"]
+        except Exception:
+            pass
+    return total_indexed
+
+
 def cmd_query(args):
     """Search the knowledge index and return file pointers."""
     from src.pipeline import KnowledgePipeline
+
+    updated = _auto_update(verbose=args.verbose)
+    if updated and args.verbose:
+        print(f"Auto-updated {updated} objects from registered workspaces.\n")
+
     config = load_config(args.workspace)
     pipeline = KnowledgePipeline(config)
 
