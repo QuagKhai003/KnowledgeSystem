@@ -1,11 +1,25 @@
 # Knowledge OS
 
-A local-first knowledge compilation engine that transforms unstructured documents into a searchable knowledge base, accessible from any AI-powered CLI.
+A local-first knowledge compiler that turns any folder of files into a searchable knowledge base for AI coding assistants.
 
-Unlike traditional RAG systems that chunk and compress documents, Knowledge OS compiles files into structured Knowledge Objects and returns **file pointers** at query time, allowing the AI to read source material directly with zero information loss.
+## The Problem
+
+AI coding assistants (Claude Code, Cursor, Codex, Gemini CLI) are powerful, but they have no memory of your local files beyond what's open. When you ask a question, the AI can't search your lecture notes, project documentation, or reference material unless you manually paste it in.
+
+Traditional RAG systems solve this by chunking documents into fragments and feeding compressed snippets to the AI. This loses context — the AI sees a paragraph, not the full document, and has no way to verify or read further.
+
+## The Solution
+
+Knowledge OS takes a different approach: **compile, don't chunk.**
+
+1. **Index any folder** — point `k-os` at a folder and it scans every readable file (not just specific extensions)
+2. **Compile into Knowledge Objects** — each file becomes a structured object with four abstraction levels: raw content, outline, summary, and keywords
+3. **Return pointers, not passages** — queries return ranked file paths with matched terms and section headings, so the AI reads the original files directly
+
+The AI gets the full source material with zero information loss.
 
 ```
-Raw Files → Parse → Knowledge Objects → Abstractions → Index → Query → File Pointers
+Any Text File → Parse → Knowledge Object → Abstractions → Index → Query → File Pointer → AI Reads Raw File
 ```
 
 ## Getting Started
@@ -45,7 +59,13 @@ k-os query "What is cryptography?"
 
 ### 1. Scan
 
-Point `k-os` at any folder containing `.md`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, or `.pdf` files. SHA-256 hashing ensures only changed files are reprocessed on subsequent runs.
+Point `k-os` at any folder. The scanner reads every file and classifies it automatically:
+
+- **Specialized parsers** for `.md`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.pdf` — extract structure (AST, headings, frontmatter)
+- **Universal text parser** for everything else — any UTF-8 readable file (`.txt`, `.yaml`, `.toml`, `.csv`, `.sql`, `.sh`, config files, logs, etc.)
+- **Binary files** (images, audio, archives, compiled objects) are skipped automatically
+
+SHA-256 hashing ensures only changed files are reprocessed on subsequent runs.
 
 ### 2. Compile
 
@@ -53,10 +73,12 @@ Each file is compiled into a Knowledge Object with four abstraction levels:
 
 | Level | Content | Method |
 |-------|---------|--------|
-| L0 | Full raw content | Verbatim |
-| L1 | Heading and section outline | Structural extraction |
-| L2 | Concept summary (800 chars) | Sampled from beginning, middle, and end |
-| L3 | Keywords (100 terms) | TF-IDF with bigrams and proper noun boosting |
+| L0 | Full raw content | Verbatim storage |
+| L1 | Structural outline | Headings (docs), class/function signatures (code), first sentences (text) |
+| L2 | Concept summary (800 chars) | Docstrings + comments (code), key topics + sampled passages (docs) |
+| L3 | Keywords (100 terms) | TF-IDF with bigrams, proper nouns, and identifier extraction |
+
+For code files, the compiler extracts natural language from docstrings, comments, and identifier names (`calculateTotalPrice` → "calculate total price") to make code searchable by concept, not just symbol name.
 
 Each object is also assigned an ontology class, domain, tags, and relationship metadata.
 
@@ -132,9 +154,9 @@ Adapters control how file pointers are formatted for each AI CLI. Knowledge OS d
 
 | Layer | Responsibility |
 |-------|---------------|
-| Ingestion | Incremental file scanning with SHA-256 change detection |
-| Parsing | Markdown (wikilinks, frontmatter, headings), Python/JS/TS/JSX/TSX AST, PDF layout extraction |
-| Compilation | Knowledge Object construction with formal ontology (10 classes, 7 predicates) |
+| Ingestion | Universal file scanning with UTF-8 text detection and SHA-256 change tracking |
+| Parsing | Markdown (wikilinks, frontmatter), Python AST (docstrings, comments), PDF layout, universal text fallback |
+| Compilation | Knowledge Object construction with identifier-to-prose, TF-IDF keywords, formal ontology (10 classes, 7 predicates) |
 | Abstraction | Four-level hierarchy: L0 (raw) → L1 (outline) → L2 (summary) → L3 (keywords) |
 | Indexing | SQLite FTS5 (default) with optional Qdrant vector and Neo4j graph indexes |
 | Query | BM25-ranked file pointers with matched terms, sections, and relevance scores |
@@ -147,8 +169,8 @@ k-os                    CLI entry point
 k-os.bat                Windows batch wrapper
 
 src/
-├── ingestion/          File scanning and state tracking
-│   └── parsers/        Markdown, code AST, and PDF parsers
+├── ingestion/          Universal file scanning and state tracking
+│   └── parsers/        Markdown, code AST, PDF, and universal text parsers
 ├── compiler/           Knowledge Object compilation and ontology validation
 ├── indexing/           SQLite FTS5, Qdrant, and Neo4j clients
 ├── adapters/           Output formatters (Claude, GPT, Codex, Qwen, Gemini)
@@ -168,6 +190,7 @@ docker/                 docker-compose.yml (Neo4j, Qdrant)
 
 ## Design Principles
 
+- **Any file, any format** — indexes every readable text file, not just specific extensions
 - **No LLM dependency** — all abstraction is algorithmic; no API keys required
 - **No Docker dependency** — SQLite FTS5 provides full keyword search out of the box
 - **No fixed chunking** — abstraction levels replace arbitrary document splitting
