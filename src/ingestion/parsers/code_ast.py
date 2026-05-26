@@ -10,6 +10,13 @@ def parse_code(file_path: str) -> dict:
     if file_path.endswith(".py"):
         return _parse_python(file_path, text)
 
+    from .tree_sitter_parser import supports, parse_with_tree_sitter
+    ext = Path(file_path).suffix.lower()
+    if supports(ext):
+        result = parse_with_tree_sitter(file_path)
+        if result:
+            return result
+
     return _parse_generic_code(file_path, text)
 
 
