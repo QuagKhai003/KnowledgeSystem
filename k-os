@@ -263,14 +263,98 @@ def cmd_query(args):
         print("Have you rebuilt? Try: k-os -w /path/to/folder rebuild -v")
 
 
+def cmd_hubs(args):
+    """Show most-connected nodes (architectural hubs)."""
+    from src.indexing.fts_index import FTSIndex
+    fts = FTSIndex()
+    hubs = fts.get_hubs(limit=args.limit)
+    if not hubs:
+        print("No edges found. Run 'k-os rebuild' first.")
+        return
+    print(f"{'Inbound':<10} {'Name':<30} {'File'}")
+    print("-" * 80)
+    for h in hubs:
+        name = h["name"] or h["id"].replace("concept_", "")
+        path = h["file_path"] or ""
+        if path:
+            path = str(Path(path).name)
+        print(f"{h['inbound']:<10} {name:<30} {path}")
+
+
+def cmd_graph(args):
+    """Generate interactive dependency graph visualization."""
+    from src.indexing.fts_index import FTSIndex
+    from src.graph_view import generate_graph_html
+
+    fts = FTSIndex()
+    data = fts.get_graph_data()
+    if not data["nodes"]:
+        print("No data found. Run 'k-os rebuild' first.")
+        return
+
+    output = Path(args.output) if args.output else Path.cwd() / "graph.html"
+    generate_graph_html(data, output)
+    print(f"Graph generated: {output}")
+    print(f"  {len(data['nodes'])} nodes, {len(data['edges'])} edges")
+    print(f"  Open in browser: file://{output.resolve()}")
+
+
 def cmd_mcp(args):
     """Start the MCP server for AI CLI integration."""
     from src.mcp_server import main as mcp_main
     mcp_main()
 
 
+def _install_git_hook(workspace: str | None):
+    """Install a post-commit hook for auto-indexing."""
+    root = Path(workspace).resolve() if workspace else Path.cwd()
+    git_dir = root / ".git"
+    if not git_dir.is_dir():
+        print(f"Error: {root} is not a git repository.")
+        return
+
+    hook_path = git_dir / "hooks" / "post-commit"
+    k_os_bin = Path(__file__).resolve()
+
+    # Check if hook already exists and has our marker
+    if hook_path.exists():
+        content = hook_path.read_text()
+        if "k-os" in content:
+            print(f"Hook already installed: {hook_path}")
+            return
+        # Append to existing hook
+        with open(hook_path, "a") as f:
+            f.write(f"\n# Knowledge OS auto-index\n{k_os_bin} -w {root} update 2>/dev/null &\n")
+        print(f"Appended to existing hook: {hook_path}")
+    else:
+        hook_path.parent.mkdir(parents=True, exist_ok=True)
+        hook_path.write_text(
+            f"#!/bin/sh\n# Knowledge OS auto-index on commit\n{k_os_bin} -w {root} update 2>/dev/null &\n"
+        )
+        hook_path.chmod(0o755)
+        print(f"Installed post-commit hook: {hook_path}")
+
+    print("New/changed files will be auto-indexed after each commit.")
+
+
+def cmd_update(args):
+    """Incremental update: scan and index only changed files."""
+    from src.pipeline import KnowledgePipeline
+    config = load_config(args.workspace)
+    pipeline = KnowledgePipeline(config)
+    stats = pipeline.incremental_update(verbose=args.verbose)
+    if stats["objects_indexed"] > 0:
+        print(f"Updated: {stats['objects_indexed']} objects from {stats['files_scanned']} files")
+    elif args.verbose:
+        print("No changes detected.")
+
+
 def cmd_install(args):
     """Show installation instructions for global access."""
+    if args.hook:
+        _install_git_hook(args.workspace)
+        return
+
     project_root = Path(__file__).resolve().parent
 
     if sys.platform == "win32":
@@ -345,12 +429,25 @@ def main():
     query_p.add_argument("-m", "--model", default="auto", help="Output adapter (auto/claude/gpt/codex/qwen/gemini). Default: auto-detect from AI CLI")
     query_p.add_argument("-v", "--verbose", action="store_true")
 
+    # hubs
+    hubs_p = subparsers.add_parser("hubs", help="Show most-connected nodes (architectural hubs)")
+    hubs_p.add_argument("-n", "--limit", type=int, default=20, help="Number of hubs to show (default: 20)")
+
+    # graph
+    graph_p = subparsers.add_parser("graph", help="Generate interactive dependency graph HTML")
+    graph_p.add_argument("-o", "--output", default=None, help="Output path (default: ./graph.html)")
+
+    # update
+    update_p = subparsers.add_parser("update", help="Incremental update: index only changed files")
+    update_p.add_argument("-v", "--verbose", action="store_true")
+
     # mcp
     subparsers.add_parser("mcp", help="Start MCP server for AI CLI integration")
 
     # install
     install_p = subparsers.add_parser("install", help="Show global installation instructions")
     install_p.add_argument("--mcp", action="store_true", help="Also show MCP server config")
+    install_p.add_argument("--hook", action="store_true", help="Install git post-commit hook for auto-indexing")
 
     args = parser.parse_args()
     commands = {
@@ -361,6 +458,9 @@ def main():
         "rebuild": cmd_rebuild,
         "status": cmd_status,
         "query": cmd_query,
+        "hubs": cmd_hubs,
+        "graph": cmd_graph,
+        "update": cmd_update,
         "mcp": cmd_mcp,
         "install": cmd_install,
     }

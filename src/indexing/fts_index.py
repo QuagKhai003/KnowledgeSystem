@@ -40,6 +40,14 @@ class FTSIndex:
                 keywords TEXT
             )
         """)
+        self._conn.execute("""
+            CREATE TABLE IF NOT EXISTS edges (
+                source_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                predicate TEXT NOT NULL,
+                PRIMARY KEY (source_id, target_id, predicate)
+            )
+        """)
         self._conn.commit()
 
     def index_document(self, doc: dict):
@@ -101,9 +109,46 @@ class FTSIndex:
             for row in rows
         ]
 
+    def index_edges(self, source_id: str, edges: list[tuple[str, str]]):
+        self._conn.execute("DELETE FROM edges WHERE source_id = ?", (source_id,))
+        for target_id, predicate in edges:
+            self._conn.execute(
+                "INSERT OR IGNORE INTO edges (source_id, target_id, predicate) VALUES (?, ?, ?)",
+                (source_id, target_id, predicate),
+            )
+        self._conn.commit()
+
+    def get_hubs(self, limit: int = 20) -> list[dict]:
+        rows = self._conn.execute("""
+            SELECT e.target_id, m.name, m.file_path, m.domain, COUNT(*) as inbound
+            FROM edges e
+            LEFT JOIN doc_meta m ON e.target_id = m.object_id
+            GROUP BY e.target_id
+            ORDER BY inbound DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+        return [
+            {"id": r[0], "name": r[1] or r[0], "file_path": r[2] or "",
+             "domain": r[3] or "", "inbound": r[4]}
+            for r in rows
+        ]
+
+    def get_graph_data(self) -> dict:
+        nodes = {}
+        for row in self._conn.execute("SELECT object_id, name, file_path, domain FROM doc_meta").fetchall():
+            nodes[row[0]] = {"id": row[0], "name": row[1], "file_path": row[2], "domain": row[3]}
+        edges = []
+        for row in self._conn.execute("SELECT source_id, target_id, predicate FROM edges").fetchall():
+            edges.append({"source": row[0], "target": row[1], "predicate": row[2]})
+            for nid in (row[0], row[1]):
+                if nid not in nodes:
+                    nodes[nid] = {"id": nid, "name": nid, "file_path": "", "domain": ""}
+        return {"nodes": list(nodes.values()), "edges": edges}
+
     def wipe(self):
         self._conn.execute("DELETE FROM documents")
         self._conn.execute("DELETE FROM doc_meta")
+        self._conn.execute("DELETE FROM edges")
         self._conn.commit()
 
     def count(self) -> int:

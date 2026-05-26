@@ -160,6 +160,10 @@ class KnowledgePipeline:
                     "keywords": keywords,
                 })
 
+                if obj.relationships:
+                    edges = [(r.target, r.predicate) for r in obj.relationships]
+                    self.fts.index_edges(obj.id, edges)
+
                 if qdrant and embedder:
                     try:
                         vector = embedder.embed(embed_text)
