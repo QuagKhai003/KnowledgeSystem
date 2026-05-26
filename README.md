@@ -15,6 +15,7 @@ Knowledge OS takes a different approach: **compile, don't chunk.**
 1. **Index any folder** — point `k-os` at a folder and it scans every readable file (not just specific extensions)
 2. **Compile into Knowledge Objects** — each file becomes a structured object with four abstraction levels: raw content, outline, summary, and keywords
 3. **Return pointers, not passages** — queries return ranked file paths with matched terms and section headings, so the AI reads the original files directly
+4. **Stay fresh automatically** — registered workspaces are incrementally updated on every query; git hooks can trigger indexing on each commit
 
 The AI gets the full source material with zero information loss.
 
@@ -45,7 +46,7 @@ The installer handles cloning, virtual environment setup, dependency installatio
 ### Quick Start
 
 ```bash
-# Index a folder of documents
+# Index a folder
 k-os -w /path/to/your/folder rebuild -v
 
 # Query your knowledge base
@@ -53,6 +54,12 @@ k-os query "What is cryptography?"
 
 # Use within Claude Code or any supported AI CLI
 /k-os query what is cryptography
+
+# See which files are architectural hubs
+k-os hubs
+
+# Generate an interactive dependency graph
+k-os graph
 ```
 
 ## How It Works
@@ -61,11 +68,24 @@ k-os query "What is cryptography?"
 
 Point `k-os` at any folder. The scanner reads every file and classifies it automatically:
 
-- **Specialized parsers** for `.md`, `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.pdf` — extract structure (AST, headings, frontmatter)
-- **Universal text parser** for everything else — any UTF-8 readable file (`.txt`, `.yaml`, `.toml`, `.csv`, `.sql`, `.sh`, config files, logs, etc.)
+- **Tree-sitter AST** for 30+ programming languages — extracts classes, functions, methods, imports, and comments with full structural understanding
+- **Python AST** for `.py` files — native `ast` module for maximum accuracy
+- **Markdown parser** for `.md` — wikilinks, frontmatter, heading hierarchy
+- **PDF layout extractor** for `.pdf` — page text, outline, heading detection
+- **Universal text parser** for everything else — any UTF-8 readable file (`.txt`, `.yaml`, `.toml`, `.csv`, `.sql`, config files, logs, etc.)
 - **Binary files** (images, audio, archives, compiled objects) are skipped automatically
 
-SHA-256 hashing ensures only changed files are reprocessed on subsequent runs.
+SHA-256 hashing ensures only changed files are reprocessed. Registered workspaces are auto-updated on every query, so the index is never stale.
+
+### Supported Languages
+
+| Parser | Languages |
+|--------|-----------|
+| Python AST | Python |
+| Tree-sitter | JavaScript, TypeScript, JSX, TSX, Go, Rust, Java, C, C++, C#, Ruby, Bash |
+| Universal text | Any UTF-8 readable file not covered above |
+
+Tree-sitter grammars are modular — adding a new language requires only installing its grammar package.
 
 ### 2. Compile
 
@@ -80,7 +100,7 @@ Each file is compiled into a Knowledge Object with four abstraction levels:
 
 For code files, the compiler extracts natural language from docstrings, comments, and identifier names (`calculateTotalPrice` → "calculate total price") to make code searchable by concept, not just symbol name.
 
-Each object is also assigned an ontology class, domain, tags, and relationship metadata.
+Each object is assigned an ontology class, domain, tags, and dependency relationships. Relationships are persisted as edges in the index for hub detection and graph visualization.
 
 ### 3. Index
 
@@ -88,11 +108,11 @@ Knowledge Objects are indexed into a tiered storage architecture:
 
 | Engine | Search Type | Requirement |
 |--------|-------------|-------------|
-| SQLite FTS5 | BM25 keyword search | Built-in (no dependencies) |
+| SQLite FTS5 | BM25 keyword search + edge graph | Built-in (no dependencies) |
 | Qdrant | Dense vector semantic search | Docker (optional) |
 | Neo4j | Graph traversal for related concepts | Docker (optional) |
 
-The basic tier (SQLite FTS5) works out of the box with no external dependencies.
+The basic tier (SQLite FTS5) works out of the box with no external dependencies. Docker ports are configurable in `settings.yaml` to avoid conflicts with other services.
 
 ### 4. Query
 
@@ -103,23 +123,45 @@ Queries are matched against the index and return ranked file pointers containing
 - **Section headings** to guide the reader to specific content
 - **Relevance score** based on BM25 ranking
 
+Before searching, all registered workspaces are incrementally scanned for new or changed files. If nothing changed, this adds negligible overhead. If files were added or modified, they're compiled and indexed automatically — no manual rebuild needed.
+
 The AI reads the raw files directly, preserving full context and eliminating compression artifacts.
 
 ## CLI Reference
 
 ```bash
+# Core pipeline
+k-os -w <path> rebuild -v        # Full pipeline: scan, compile, index
+k-os -w <path> update -v         # Incremental: index only changed files
 k-os -w <path> scan -v           # Scan folder for files (dry run)
 k-os -w <path> compile --json    # Compile files into Knowledge Objects
-k-os -w <path> rebuild -v        # Full pipeline: scan, compile, index
-k-os status                      # Display database summary
-k-os parse path/to/file.md       # Parse a single file (debug)
+
+# Search and analysis
 k-os query "question"            # Query and return file pointers
 k-os query "question" -m claude  # Query with a specific output adapter
+k-os hubs                        # Show most-connected nodes (architectural hubs)
+k-os graph                       # Generate interactive dependency graph HTML
+k-os graph -o deps.html          # Generate graph to specific path
+
+# Utilities
+k-os status                      # Display database summary
+k-os parse path/to/file.md       # Parse a single file (debug)
 k-os mcp                         # Start the MCP server
 k-os install --mcp               # Display MCP configuration for manual setup
+k-os install --hook              # Install git post-commit hook for auto-indexing
 ```
 
 The `-w` flag specifies the workspace path and must precede the subcommand.
+
+## Auto-Indexing
+
+Knowledge OS provides two mechanisms to keep the index fresh without manual rebuilds:
+
+**Query-time auto-update** — Every `k-os query` automatically scans all previously rebuilt workspaces for new or changed files. Only the delta is compiled and indexed. If nothing changed, the scan adds ~0.4s.
+
+**Git post-commit hook** — Run `k-os install --hook` in any git repository to install a post-commit hook. After each commit, changed files are indexed in the background with zero impact on git performance.
+
+Both mechanisms use SHA-256 change detection and only reprocess files that actually changed.
 
 ## AI CLI Integration
 
@@ -155,11 +197,12 @@ Adapters control how file pointers are formatted for each AI CLI. Knowledge OS d
 | Layer | Responsibility |
 |-------|---------------|
 | Ingestion | Universal file scanning with UTF-8 text detection and SHA-256 change tracking |
-| Parsing | Markdown (wikilinks, frontmatter), Python AST (docstrings, comments), PDF layout, universal text fallback |
+| Parsing | Tree-sitter AST (30+ languages), Python AST, Markdown, PDF layout, universal text fallback |
 | Compilation | Knowledge Object construction with identifier-to-prose, TF-IDF keywords, formal ontology (10 classes, 7 predicates) |
 | Abstraction | Four-level hierarchy: L0 (raw) → L1 (outline) → L2 (summary) → L3 (keywords) |
-| Indexing | SQLite FTS5 (default) with optional Qdrant vector and Neo4j graph indexes |
-| Query | BM25-ranked file pointers with matched terms, sections, and relevance scores |
+| Indexing | SQLite FTS5 with edge graph (default), optional Qdrant vector and Neo4j graph indexes |
+| Query | BM25-ranked file pointers with auto-update, matched terms, sections, and relevance scores |
+| Analysis | Hub detection (inbound edge ranking), interactive dependency graph visualization |
 | Adapters | Pointer formatting tailored to target AI CLI |
 
 ## Project Structure
@@ -170,10 +213,11 @@ k-os.bat                Windows batch wrapper
 
 src/
 ├── ingestion/          Universal file scanning and state tracking
-│   └── parsers/        Markdown, code AST, PDF, and universal text parsers
+│   └── parsers/        Tree-sitter, Python AST, Markdown, PDF, and universal text parsers
 ├── compiler/           Knowledge Object compilation and ontology validation
-├── indexing/           SQLite FTS5, Qdrant, and Neo4j clients
+├── indexing/           SQLite FTS5 (with edges), Qdrant, and Neo4j clients
 ├── adapters/           Output formatters (Claude, GPT, Codex, Qwen, Gemini)
+├── graph_view.py       Interactive HTML graph generator
 ├── pipeline.py         End-to-end orchestrator
 └── mcp_server.py       MCP server for AI CLI integration
 
@@ -185,16 +229,18 @@ scripts/
 └── db_setup.py         Cross-platform database health check
 
 config/                 settings.yaml, .knowledgeignore
-docker/                 docker-compose.yml (Neo4j, Qdrant)
+docker/                 docker-compose.yml (Neo4j, Qdrant — ports configurable)
 ```
 
 ## Design Principles
 
 - **Any file, any format** — indexes every readable text file, not just specific extensions
+- **30+ languages** — tree-sitter provides real AST parsing, not regex heuristics
 - **No LLM dependency** — all abstraction is algorithmic; no API keys required
 - **No Docker dependency** — SQLite FTS5 provides full keyword search out of the box
 - **No fixed chunking** — abstraction levels replace arbitrary document splitting
 - **Zero information loss** — queries return pointers; the AI reads raw files directly
+- **Always fresh** — auto-update on query + git hooks ensure the index is never stale
 - **Incremental processing** — SHA-256 hashing ensures only changed files are reprocessed
 - **Tiered infrastructure** — scales from SQLite-only to SQLite + Qdrant + Neo4j
 - **Model-agnostic output** — adapter pattern formats results for any AI CLI
