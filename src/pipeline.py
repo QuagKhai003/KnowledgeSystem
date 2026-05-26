@@ -113,13 +113,8 @@ class KnowledgePipeline:
             parsed = item["parsed"]
 
             try:
-                if file_type == "markdown":
-                    objs = self.compiler.compile_markdown(parsed)
-                elif file_type == "code":
-                    objs = self.compiler.compile_code(parsed)
-                elif file_type == "pdf":
-                    objs = self.compiler.compile_markdown(parsed)
-                else:
+                objs = self.compiler.compile(parsed, file_type)
+                if not objs:
                     continue
 
                 errors = self.validator.validate(objs)

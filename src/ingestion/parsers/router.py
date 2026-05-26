@@ -3,11 +3,13 @@ from pathlib import Path
 from .markdown import parse_markdown
 from .code_ast import parse_code
 from .pdf_layout import parse_pdf
+from .text import parse_text
 
 PARSER_MAP = {
     "markdown": parse_markdown,
     "code": parse_code,
     "pdf": parse_pdf,
+    "text": parse_text,
 }
 
 

@@ -111,6 +111,8 @@ class OntologyValidator:
         for obj in objects:
             if obj.type != "implementation":
                 continue
+            if obj.abstractions and (obj.abstractions.level_0 or obj.abstractions.level_2):
+                continue
             has_concept_link = any(
                 rel.predicate in concept_linking_predicates
                 and obj_map.get(rel.target, None) is not None

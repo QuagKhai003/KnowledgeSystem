@@ -87,82 +87,100 @@ class CompilerPipeline:
 
     def compile_code(self, parsed: dict) -> list[KnowledgeObject]:
         file_path = parsed.get("file_path", "")
-        file_name = Path(file_path).stem
-        objects = []
+        raw_text = parsed.get("raw_text", "")
 
-        # File-level implementation node
-        file_id = file_path
-        file_obj = KnowledgeObject(
-            id=file_id,
+        level_0 = raw_text
+        level_1_parts = []
+        for cls in parsed.get("classes", []):
+            desc = f"Class {cls['name']}"
+            if cls.get("bases"):
+                desc += f" extends {', '.join(cls['bases'])}"
+            methods = ", ".join(m["name"] for m in cls.get("methods", []))
+            if methods:
+                desc += f" with methods: {methods}"
+            level_1_parts.append(desc)
+        for func in parsed.get("functions", []):
+            args_str = ", ".join(func.get("args", []))
+            desc = f"Function {func['name']}({args_str})"
+            ret = func.get("returns", "")
+            if ret:
+                desc += f" -> {ret}"
+            level_1_parts.append(desc)
+        level_1 = "; ".join(level_1_parts)
+
+        prose_parts = parsed.get("docstrings", []) + parsed.get("comments", [])
+        if prose_parts:
+            level_2 = " ".join(prose_parts)[:800]
+        else:
+            level_2 = self._identifiers_to_prose(parsed)
+
+        level_3 = self._code_keywords(parsed, raw_text)
+
+        concept_id = f"concept_{_slugify(Path(file_path).stem)}"
+        concept = KnowledgeObject(
+            id=concept_id,
             type="implementation",
             name=Path(file_path).name,
             source_file=file_path,
+            abstractions=Abstraction(level_0=level_0, level_1=level_1, level_2=level_2, level_3=level_3),
             ontology_class="Implementation",
             ontology_depth=4,
+            domain=self._infer_domain_from_name(Path(file_path).stem),
         )
 
-        # Import relationships
         for imp in parsed.get("imports", []):
             module = imp["module"].split(".")[-1]
-            target_id = f"concept_{_slugify(module)}"
-            file_obj.relationships.append(
-                Relationship(target=target_id, predicate="depends_on")
+            concept.relationships.append(
+                Relationship(target=f"concept_{_slugify(module)}", predicate="depends_on")
             )
 
-        # Class-level concept nodes
+        return [concept]
+
+    def _identifiers_to_prose(self, parsed: dict) -> str:
+        """Convert identifier names to natural language when no comments exist."""
+        names = []
         for cls in parsed.get("classes", []):
-            cls_id = f"concept_{_slugify(cls['name'])}"
-            methods_desc = ", ".join(m["name"] for m in cls.get("methods", []))
-            level_1 = f"Class {cls['name']}"
-            if cls.get("bases"):
-                level_1 += f" extends {', '.join(cls['bases'])}"
-            if methods_desc:
-                level_1 += f" with methods: {methods_desc}"
-
-            cls_obj = KnowledgeObject(
-                id=cls_id,
-                type="concept",
-                name=cls["name"],
-                source_file=file_path,
-                abstractions=Abstraction(level_1=level_1),
-                ontology_class="DataStructure",
-                ontology_depth=3,
-            )
-
-            # Inheritance
-            for base in cls.get("bases", []):
-                base_id = f"concept_{_slugify(base)}"
-                cls_obj.relationships.append(
-                    Relationship(target=base_id, predicate="extends")
-                )
-
-            file_obj.relationships.append(
-                Relationship(target=cls_id, predicate="example_of")
-            )
-            objects.append(cls_obj)
-
-        # Top-level function concept nodes
+            names.append(self._split_identifier(cls["name"]))
+            for m in cls.get("methods", []):
+                if not m["name"].startswith("_"):
+                    names.append(self._split_identifier(m["name"]))
         for func in parsed.get("functions", []):
-            func_id = f"concept_{_slugify(file_name)}_{_slugify(func['name'])}"
-            args_str = ", ".join(func.get("args", []))
-            ret = func.get("returns", "")
-            level_1 = f"Function {func['name']}({args_str})"
-            if ret:
-                level_1 += f" -> {ret}"
+            if not func["name"].startswith("_"):
+                names.append(self._split_identifier(func["name"]))
+        for imp in parsed.get("imports", []):
+            parts = imp["module"].split(".")
+            names.append(" ".join(parts[-2:]) if len(parts) > 1 else parts[0])
+        return " ".join(names)[:800] if names else ""
 
-            func_obj = KnowledgeObject(
-                id=func_id,
-                type="concept",
-                name=func["name"],
-                source_file=file_path,
-                abstractions=Abstraction(level_1=level_1),
-                ontology_class="Algorithm",
-                ontology_depth=4,
-            )
-            objects.append(func_obj)
+    def _split_identifier(self, name: str) -> str:
+        """Split camelCase and snake_case into words."""
+        words = re.sub(r'([a-z])([A-Z])', r'\1 \2', name)
+        words = words.replace("_", " ")
+        return words.lower().strip()
 
-        objects.append(file_obj)
-        return objects
+    def _code_keywords(self, parsed: dict, raw_text: str) -> str:
+        """Extract searchable keywords from code: identifiers + imports + comments."""
+        terms = set()
+        for cls in parsed.get("classes", []):
+            terms.add(cls["name"].lower())
+            terms.add(self._split_identifier(cls["name"]))
+            for m in cls.get("methods", []):
+                terms.add(self._split_identifier(m["name"]))
+        for func in parsed.get("functions", []):
+            terms.add(self._split_identifier(func["name"]))
+        for imp in parsed.get("imports", []):
+            parts = imp["module"].split(".")
+            for p in parts:
+                if len(p) > 2:
+                    terms.add(p.lower())
+        for doc in parsed.get("docstrings", []):
+            words = re.findall(r'\b[a-z]{3,}\b', doc.lower())
+            terms.update(words[:20])
+        for comment in parsed.get("comments", []):
+            words = re.findall(r'\b[a-z]{3,}\b', comment.lower())
+            terms.update(words[:10])
+        terms.discard("")
+        return "; ".join(sorted(terms)[:100])
 
     def compile_pdf(self, parsed: dict) -> list[KnowledgeObject]:
         file_path = parsed.get("file_path", "")
@@ -202,11 +220,36 @@ class CompilerPipeline:
 
         return [concept, file_obj]
 
+    def compile_text(self, parsed: dict) -> list[KnowledgeObject]:
+        """Universal text compiler — works for any readable text file."""
+        file_path = parsed.get("file_path", "")
+        raw_text = parsed.get("raw_text", "")
+        name = Path(file_path).name
+
+        level_0 = raw_text
+        level_1 = self._build_level_1_from_text(raw_text)
+        level_2 = self._build_level_2_summary(name, raw_text, [])
+        level_3 = self._build_level_3_keywords(raw_text)
+
+        concept_id = f"concept_{_slugify(Path(file_path).stem)}"
+        concept = KnowledgeObject(
+            id=concept_id,
+            type="concept",
+            name=name,
+            source_file=file_path,
+            abstractions=Abstraction(level_0=level_0, level_1=level_1, level_2=level_2, level_3=level_3),
+            ontology_class="Concept",
+            ontology_depth=3,
+            domain=self._infer_domain_from_name(Path(file_path).stem),
+        )
+        return [concept]
+
     def compile(self, parsed: dict, file_type: str) -> list[KnowledgeObject]:
         dispatch = {
             "markdown": self.compile_markdown,
             "code": self.compile_code,
             "pdf": self.compile_pdf,
+            "text": self.compile_text,
         }
         compiler = dispatch.get(file_type)
         if compiler is None:

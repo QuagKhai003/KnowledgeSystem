@@ -6,7 +6,7 @@ from typing import Generator
 
 from .state_db import StateDB
 
-EXTENSION_MAP = {
+SPECIALIZED_PARSERS = {
     ".md": "markdown",
     ".py": "code",
     ".js": "code",
@@ -16,11 +16,25 @@ EXTENSION_MAP = {
     ".pdf": "pdf",
 }
 
+BINARY_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".ico", ".svg", ".webp",
+    ".mp3", ".mp4", ".wav", ".avi", ".mov", ".mkv", ".flac", ".ogg",
+    ".zip", ".tar", ".gz", ".rar", ".7z", ".bz2", ".xz",
+    ".exe", ".dll", ".so", ".dylib", ".bin", ".o", ".a",
+    ".woff", ".woff2", ".ttf", ".otf", ".eot",
+    ".db", ".sqlite", ".sqlite3",
+    ".class", ".jar", ".war",
+    ".pyc", ".pyo", ".wasm",
+}
+
 DEFAULT_IGNORE = {
     ".git", ".obsidian", "blueprint", "data", "docker",
     "scripts", "tests", "node_modules", "__pycache__",
     "build", "dist", "venv", ".venv", "env",
 }
+
+# Keep for backwards compatibility
+EXTENSION_MAP = SPECIALIZED_PARSERS
 
 
 class Scanner:
@@ -61,8 +75,29 @@ class Scanner:
                 h.update(chunk)
         return h.hexdigest()
 
-    def _get_file_type(self, path: Path) -> str | None:
-        return EXTENSION_MAP.get(path.suffix.lower())
+    def _classify_file(self, path: Path) -> str | None:
+        ext = path.suffix.lower()
+        if ext in BINARY_EXTENSIONS:
+            return None
+        specialized = SPECIALIZED_PARSERS.get(ext)
+        if specialized:
+            return specialized
+        if self._is_text_file(path):
+            return "text"
+        return None
+
+    def _is_text_file(self, path: Path) -> bool:
+        try:
+            with open(path, "rb") as f:
+                chunk = f.read(8192)
+            if not chunk:
+                return False
+            if b"\x00" in chunk:
+                return False
+            chunk.decode("utf-8")
+            return True
+        except (UnicodeDecodeError, PermissionError, OSError):
+            return False
 
     def walk(self) -> Generator[dict, None, None]:
         """Walk the workspace and yield files that are new or changed."""
@@ -73,7 +108,7 @@ class Scanner:
             if self._is_ignored(path):
                 continue
 
-            file_type = self._get_file_type(path)
+            file_type = self._classify_file(path)
             if file_type is None:
                 continue
 
