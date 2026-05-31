@@ -29,9 +29,12 @@ Any Text File → Parse → Knowledge Object → Abstractions → Index → Quer
 
 - Python 3.11+
 - Git
-- Docker (optional, for semantic search and graph traversal)
+
+Docker is **not required**. The core system (keyword search, indexing, auto-update) runs entirely on SQLite FTS5 with zero external dependencies. Docker is only needed if you want optional semantic vector search (Qdrant) or graph traversal (Neo4j).
 
 ### Installation
+
+#### Without Docker (default — works immediately)
 
 ```bash
 # macOS / Linux / WSL / Git Bash
@@ -41,7 +44,32 @@ curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/
 irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
 ```
 
-The installer handles cloning, virtual environment setup, dependency installation, global CLI registration, and AI CLI integration.
+This gives you the full pipeline: scan, compile, index, query, hubs, graph, git hooks, and all AI CLI integrations. No Docker needed.
+
+#### With Docker (adds semantic search + graph traversal)
+
+If Docker is installed when you run the bootstrap script, Qdrant and Neo4j containers start automatically. To add them later:
+
+```bash
+docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
+```
+
+Ports are configurable via environment variables to avoid conflicts with other services:
+
+```bash
+NEO4J_HTTP_PORT=17474 NEO4J_BOLT_PORT=17687 QDRANT_HTTP_PORT=16333 QDRANT_GRPC_PORT=16334 \
+  docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
+```
+
+#### What each tier provides
+
+| Tier | Requirement | Capabilities |
+|------|-------------|--------------|
+| **Core** | Python + Git | BM25 keyword search, hub detection, graph visualization, auto-indexing, git hooks |
+| **+ Qdrant** | Docker | Dense vector semantic search (finds conceptually similar files) |
+| **+ Neo4j** | Docker | Graph traversal queries (find all transitive dependencies) |
+
+The installer handles cloning, virtual environment setup, dependency installation, global CLI registration, and AI CLI integration regardless of whether Docker is present.
 
 ### Quick Start
 
