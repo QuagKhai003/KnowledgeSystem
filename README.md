@@ -34,42 +34,132 @@ Docker is **not required**. The core system (keyword search, indexing, auto-upda
 
 ### Installation
 
-#### Without Docker (default — works immediately)
+#### Option A: Without Docker (default — works immediately)
+
+**macOS / Linux / WSL / Git Bash:**
 
 ```bash
-# macOS / Linux / WSL / Git Bash
+# 1. Run the one-line installer
 curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash
 
-# Windows (PowerShell 5.1+)
-irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
+# 2. Restart your terminal (or source your shell profile)
+source ~/.bashrc   # or: source ~/.zshrc
+
+# 3. Verify installation
+k-os status
+
+# 4. Index your first folder
+k-os -w /path/to/your/folder rebuild -v
+
+# 5. Query your knowledge base
+k-os query "your question here"
 ```
 
-This gives you the full pipeline: scan, compile, index, query, hubs, graph, git hooks, and all AI CLI integrations. No Docker needed.
+**Windows (PowerShell 5.1+):**
 
-#### With Docker (adds semantic search + graph traversal)
+```powershell
+# 1. Run the one-line installer
+irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
 
-If Docker is installed when you run the bootstrap script, Qdrant and Neo4j containers start automatically. To add them later:
+# 2. Restart your terminal (PATH update takes effect)
+
+# 3. Verify installation
+k-os status
+
+# 4. Index your first folder
+k-os -w C:\path\to\your\folder rebuild -v
+
+# 5. Query your knowledge base
+k-os query "your question here"
+```
+
+**What the installer does:**
+1. Clones the repository to `~/.k-os/KnowledgeSystem`
+2. Creates a Python virtual environment and installs dependencies
+3. Registers the `k-os` command globally (`~/.local/bin/k-os` on Unix, `~/.k-os/bin/k-os.cmd` on Windows)
+4. Configures AI CLI integrations (Claude Code slash command + MCP servers for Cursor, Windsurf, Continue, Codex, Antigravity)
+
+This gives you the full pipeline: scan, compile, index, query, hubs, graph, git hooks, and all AI CLI integrations.
+
+---
+
+#### Option B: With Docker (adds semantic search + graph traversal)
+
+**macOS / Linux / WSL / Git Bash:**
 
 ```bash
-docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
+# 1. Ensure Docker is running
+docker info
+
+# 2. Run the one-line installer (auto-detects Docker and starts containers)
+curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash
+
+# 3. Restart your terminal
+source ~/.bashrc   # or: source ~/.zshrc
+
+# 4. Verify everything is running
+k-os status
+docker ps   # Should show qdrant and neo4j containers
+
+# 5. Index and query
+k-os -w /path/to/your/folder rebuild -v
+k-os query "your question here"
 ```
 
-Ports are configurable via environment variables to avoid conflicts with other services:
+**Windows (PowerShell 5.1+):**
+
+```powershell
+# 1. Ensure Docker Desktop is running
+docker info
+
+# 2. Run the one-line installer (auto-detects Docker and starts containers)
+irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
+
+# 3. Restart your terminal
+
+# 4. Verify everything is running
+k-os status
+docker ps   # Should show qdrant and neo4j containers
+
+# 5. Index and query
+k-os -w C:\path\to\your\folder rebuild -v
+k-os query "your question here"
+```
+
+**What Docker adds:**
+- **Qdrant** (vector database) — enables semantic search that finds conceptually similar files even when keywords don't match
+- **Neo4j** (graph database) — enables graph traversal queries to explore transitive dependencies
+
+**Adding Docker later** (if you installed without it first):
+
+```bash
+# Start the containers
+docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
+
+# Verify health
+curl -sf http://localhost:6333/healthz   # Qdrant
+curl -sf http://localhost:7474           # Neo4j
+
+# Re-index to populate vector and graph stores
+k-os -w /path/to/your/folder rebuild -v
+```
+
+**Custom ports** (avoid conflicts with other Docker services):
 
 ```bash
 NEO4J_HTTP_PORT=17474 NEO4J_BOLT_PORT=17687 QDRANT_HTTP_PORT=16333 QDRANT_GRPC_PORT=16334 \
   docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
 ```
 
-#### What each tier provides
+---
+
+#### Comparison
 
 | Tier | Requirement | Capabilities |
 |------|-------------|--------------|
 | **Core** | Python + Git | BM25 keyword search, hub detection, graph visualization, auto-indexing, git hooks |
 | **+ Qdrant** | Docker | Dense vector semantic search (finds conceptually similar files) |
 | **+ Neo4j** | Docker | Graph traversal queries (find all transitive dependencies) |
-
-The installer handles cloning, virtual environment setup, dependency installation, global CLI registration, and AI CLI integration regardless of whether Docker is present.
 
 ### Quick Start
 
