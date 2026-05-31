@@ -23,11 +23,11 @@ if ! command -v python3 &> /dev/null; then
 fi
 
 if ! command -v docker &> /dev/null; then
-    echo "ERROR: Docker is required." >&2
-    echo "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-    echo "  Then re-run:"
-    echo '  curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash'
-    exit 1
+    echo "NOTE: Docker not found — optional databases (semantic search, graph) will be skipped."
+    echo "  k-os works fully with keyword search (SQLite FTS5, built-in)."
+    echo "  To add semantic search later, install Docker and run:"
+    echo "    docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d"
+    echo ""
 fi
 
 # Clone or update repo

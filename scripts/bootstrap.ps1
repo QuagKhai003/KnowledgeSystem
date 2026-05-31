@@ -20,11 +20,11 @@ if ($null -eq (Get-Command python -ErrorAction SilentlyContinue)) {
 }
 
 if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: Docker is required." -ForegroundColor Red
-    Write-Host "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-    Write-Host "  Then re-run:"
-    Write-Host '  irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex'
-    exit 1
+    Write-Host "NOTE: Docker not found - optional databases (semantic search, graph) will be skipped." -ForegroundColor Yellow
+    Write-Host "  k-os works fully with keyword search (SQLite FTS5, built-in)."
+    Write-Host "  To add semantic search later, install Docker and run:"
+    Write-Host "    docker compose -f $KOS_HOME\KnowledgeSystem\docker\docker-compose.yml up -d"
+    Write-Host ""
 }
 
 # Clone or update repo

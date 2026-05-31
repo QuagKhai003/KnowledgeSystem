@@ -36,9 +36,6 @@ databases:
   qdrant:
     host: localhost
     port: 6333
-  opensearch:
-    host: localhost
-    port: 9200
 "@ | Set-Content -Path $CONFIG_FILE -Encoding UTF8
     Write-Host "Created config: $CONFIG_FILE"
 } else {
@@ -207,30 +204,23 @@ if (Test-Path "$INSTALL_DIR\requirements.txt") {
 }
 Write-Host "Virtual environment ready"
 
-# 6. Check Docker and start databases
-if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
+# 6. Optional: Docker databases for semantic search + graph traversal
+if ($null -ne (Get-Command docker -ErrorAction SilentlyContinue)) {
     Write-Host ""
-    Write-Host "ERROR: Docker is required but not found." -ForegroundColor Red
-    Write-Host "  Install Docker Desktop from https://www.docker.com/products/docker-desktop/"
-    Write-Host "  Then re-run this script."
-    exit 1
-}
+    Write-Host "Docker found. Starting optional databases (Qdrant + Neo4j)..."
+    docker compose -f "$INSTALL_DIR\docker\docker-compose.yml" up -d
+    Write-Host "Waiting for databases to be ready..."
+    Start-Sleep -Seconds 15
 
-Write-Host ""
-Write-Host "Starting databases..."
-docker compose -f "$INSTALL_DIR\docker\docker-compose.yml" up -d
-Write-Host "Waiting for databases to be ready..."
-Start-Sleep -Seconds 15
-
-# Health checks
-$allReady = $true
-try { $null = Invoke-RestMethod -Uri "http://localhost:6333/healthz" -TimeoutSec 3; Write-Host "  Qdrant: ready" } catch { Write-Host "  Qdrant: not ready yet"; $allReady = $false }
-try { $null = Invoke-RestMethod -Uri "http://localhost:9200" -TimeoutSec 3; Write-Host "  OpenSearch: ready" } catch { Write-Host "  OpenSearch: not ready yet"; $allReady = $false }
-try { $null = Invoke-RestMethod -Uri "http://localhost:7474" -TimeoutSec 3; Write-Host "  Neo4j: ready" } catch { Write-Host "  Neo4j: not ready yet"; $allReady = $false }
-
-if (-not $allReady) {
+    # Health checks
+    try { $null = Invoke-RestMethod -Uri "http://localhost:6333/healthz" -TimeoutSec 3; Write-Host "  Qdrant: ready" } catch { Write-Host "  Qdrant: not ready yet (wait ~30s)" }
+    try { $null = Invoke-RestMethod -Uri "http://localhost:7474" -TimeoutSec 3; Write-Host "  Neo4j: ready" } catch { Write-Host "  Neo4j: not ready yet (wait ~30s)" }
+} else {
     Write-Host ""
-    Write-Host "  Some databases are still starting. Wait ~30s and they should be ready."
+    Write-Host "Docker not found - skipping optional databases." -ForegroundColor Yellow
+    Write-Host "  k-os works fully with keyword search (SQLite FTS5, built-in)."
+    Write-Host "  For semantic search + graph traversal, install Docker and run:"
+    Write-Host "    docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
 }
 
 Write-Host ""

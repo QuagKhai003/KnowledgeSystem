@@ -37,9 +37,6 @@ databases:
   qdrant:
     host: localhost
     port: 6333
-  opensearch:
-    host: localhost
-    port: 9200
 EOF
     echo "Created config: $CONFIG_FILE"
 else
