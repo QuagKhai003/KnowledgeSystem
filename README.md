@@ -281,34 +281,123 @@ Knowledge OS provides two mechanisms to keep the index fresh without manual rebu
 
 Both mechanisms use SHA-256 change detection and only reprocess files that actually changed.
 
-## AI CLI Integration
+## Using with AI Agents
 
-The installer automatically detects and configures supported AI CLIs via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP):
+Knowledge OS gives AI coding assistants access to your local files as a searchable knowledge base. After installation, the AI can search your indexed folders and read the original files directly — no copy-pasting needed.
 
-| AI CLI | Integration | Usage |
-|--------|-------------|-------|
-| Claude Code | Slash command + MCP | `/k-os query your question` |
-| Cursor | MCP server | Tools available automatically |
-| Windsurf | MCP server | Tools available automatically |
-| Continue (VS Code) | MCP server | Tools available automatically |
-| Codex CLI (OpenAI) | MCP server | Tools available automatically |
-| Antigravity (Google) | MCP server | Tools available automatically |
+### How it works with AI
 
-MCP exposes five tools: `k-os-query`, `k-os-scan`, `k-os-compile`, `k-os-rebuild`, and `k-os-status`.
+1. You index a folder (once): `k-os -w /path/to/folder rebuild -v`
+2. The AI queries your knowledge base and gets back file pointers (paths + why they're relevant)
+3. The AI reads those files directly to answer your question with full context
 
-## Output Adapters
+The AI never sees compressed snippets — it reads your actual files. Knowledge OS just tells it *which* files to read.
 
-The output adapter is auto-detected based on the active AI CLI environment. Manual override is available via the `-m` flag.
+### Claude Code
 
-| Adapter | Detection |
-|---------|-----------|
-| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` environment variable |
-| Codex | `OPENAI_API_KEY` environment variable |
-| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` environment variable |
-| Qwen | `DASHSCOPE_API_KEY` environment variable |
+The installer adds a `/k-os` slash command automatically.
+
+```
+# In Claude Code, just type:
+/k-os query how does authentication work
+
+# Claude reads the returned file pointers and answers with full context
+```
+
+You can also ask Claude to use k-os directly in conversation:
+
+```
+You: "Search my notes for anything about database migrations"
+Claude: (runs k-os query internally via MCP, reads the files, gives you a complete answer)
+```
+
+### Cursor / Windsurf / Continue (VS Code)
+
+These editors connect via MCP (Model Context Protocol). After installation, tools are available automatically in the AI chat:
+
+```
+# In the AI chat panel, just ask naturally:
+"What do my notes say about API rate limiting?"
+"Find all files related to the payment system"
+"How is the auth middleware structured in this project?"
+
+# The AI uses k-os-query tool behind the scenes
+```
+
+Available MCP tools:
+- `k-os-query` — search your knowledge base
+- `k-os-rebuild` — re-index a folder
+- `k-os-scan` — scan a folder (dry run)
+- `k-os-compile` — compile files into Knowledge Objects
+- `k-os-status` — show index statistics
+
+### Codex CLI (OpenAI)
+
+```bash
+# Codex can call k-os tools via MCP automatically
+codex "search my indexed notes for cryptography concepts"
+
+# Or use k-os directly and pipe context to Codex
+k-os query "cryptography" | codex "explain these files"
+```
+
+### Antigravity / Gemini CLI (Google)
+
+```bash
+# Same MCP integration — tools available automatically
+antigravity "what files in my project handle user authentication?"
+```
+
+### Terminal-only usage (no AI agent)
+
+k-os works standalone as a CLI tool:
+
+```bash
+# Search and get file pointers printed to terminal
+k-os query "how does the build system work"
+
+# Output shows:
+#   /path/to/Makefile — matched: build, compile, target — score: 12.3
+#   /path/to/docs/building.md — matched: build system, dependencies — score: 9.1
+
+# Then read those files yourself, or feed them to any tool
+cat $(k-os query "build system" --paths-only)
+```
+
+### Manual MCP setup (if auto-detection missed your tool)
+
+```bash
+# Show the MCP configuration JSON to add manually
+k-os install --mcp
+```
+
+Add the output to your AI tool's MCP config file:
+- Claude Code: `~/.claude/settings.json` under `mcpServers`
+- Cursor: `~/.cursor/mcp.json` under `mcpServers`
+- Windsurf: `~/.codeium/windsurf/mcp_config.json` under `mcpServers`
+- Continue: `~/.continue/config.json` under `mcpServers`
+- Codex: `~/.codex/config.toml` under `[mcp_servers.knowledge-os]`
+- Antigravity: `~/.gemini/config/mcp_config.json` under `mcpServers`
+
+### Output Adapters
+
+Output format is auto-detected based on which AI CLI is active. Manual override:
+
+```bash
+k-os query "your question" -m claude    # Format for Claude Code
+k-os query "your question" -m codex     # Format for Codex
+k-os query "your question" -m gemini    # Format for Gemini
+```
+
+| Adapter | Auto-detected when |
+|---------|-------------------|
+| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` env var present |
+| Codex | `OPENAI_API_KEY` env var present |
+| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var present |
+| Qwen | `DASHSCOPE_API_KEY` env var present |
 | GPT | Default fallback |
 
-Adapters control how file pointers are formatted for each AI CLI. Knowledge OS does not call any external APIs or language models.
+Knowledge OS does not call any external APIs or language models. Adapters only control output formatting.
 
 ## Architecture
 
