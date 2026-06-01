@@ -245,159 +245,149 @@ Before searching, all registered workspaces are incrementally scanned for new or
 
 The AI reads the raw files directly, preserving full context and eliminating compression artifacts.
 
-## CLI Reference
+## Usage
+
+### Step 1: Index a folder
+
+Before you can query anything, you need to index at least one folder:
 
 ```bash
-# Core pipeline
-k-os -w <path> rebuild -v        # Full pipeline: scan, compile, index
-k-os -w <path> update -v         # Incremental: index only changed files
-k-os -w <path> scan -v           # Scan folder for files (dry run)
-k-os -w <path> compile --json    # Compile files into Knowledge Objects
-
-# Search and analysis
-k-os query "question"            # Query and return file pointers
-k-os query "question" -m claude  # Query with a specific output adapter
-k-os hubs                        # Show most-connected nodes (architectural hubs)
-k-os graph                       # Generate interactive dependency graph HTML
-k-os graph -o deps.html          # Generate graph to specific path
-
-# Utilities
-k-os status                      # Display database summary
-k-os parse path/to/file.md       # Parse a single file (debug)
-k-os mcp                         # Start the MCP server
-k-os install --mcp               # Display MCP configuration for manual setup
-k-os install --hook              # Install git post-commit hook for auto-indexing
+k-os -w ~/my-project rebuild -v
 ```
 
-The `-w` flag specifies the workspace path and must precede the subcommand.
+This scans every file, compiles Knowledge Objects, and stores them in the index. You only need to do this once per folder — after that, the index stays fresh automatically (see [Keeping the Index Fresh](#keeping-the-index-fresh)).
 
-## Auto-Indexing
-
-Knowledge OS provides two mechanisms to keep the index fresh without manual rebuilds:
-
-**Query-time auto-update** — Every `k-os query` automatically scans all previously rebuilt workspaces for new or changed files. Only the delta is compiled and indexed. If nothing changed, the scan adds ~0.4s.
-
-**Git post-commit hook** — Run `k-os install --hook` in any git repository to install a post-commit hook. After each commit, changed files are indexed in the background with zero impact on git performance.
-
-Both mechanisms use SHA-256 change detection and only reprocess files that actually changed.
-
-## Using with AI Agents
-
-Knowledge OS gives AI coding assistants access to your local files as a searchable knowledge base. After installation, the AI can search your indexed folders and read the original files directly — no copy-pasting needed.
-
-### How it works with AI
-
-1. You index a folder (once): `k-os -w /path/to/folder rebuild -v`
-2. The AI queries your knowledge base and gets back file pointers (paths + why they're relevant)
-3. The AI reads those files directly to answer your question with full context
-
-The AI never sees compressed snippets — it reads your actual files. Knowledge OS just tells it *which* files to read.
-
-### Claude Code
-
-The installer adds a `/k-os` slash command automatically.
-
-```
-# In Claude Code, just type:
-/k-os query how does authentication work
-
-# Claude reads the returned file pointers and answers with full context
-```
-
-You can also ask Claude to use k-os directly in conversation:
-
-```
-You: "Search my notes for anything about database migrations"
-Claude: (runs k-os query internally via MCP, reads the files, gives you a complete answer)
-```
-
-### Cursor / Windsurf / Continue (VS Code)
-
-These editors connect via MCP (Model Context Protocol). After installation, tools are available automatically in the AI chat:
-
-```
-# In the AI chat panel, just ask naturally:
-"What do my notes say about API rate limiting?"
-"Find all files related to the payment system"
-"How is the auth middleware structured in this project?"
-
-# The AI uses k-os-query tool behind the scenes
-```
-
-Available MCP tools:
-- `k-os-query` — search your knowledge base
-- `k-os-rebuild` — re-index a folder
-- `k-os-scan` — scan a folder (dry run)
-- `k-os-compile` — compile files into Knowledge Objects
-- `k-os-status` — show index statistics
-
-### Codex CLI (OpenAI)
+### Step 2: Query your knowledge base
 
 ```bash
-# Codex can call k-os tools via MCP automatically
-codex "search my indexed notes for cryptography concepts"
-
-# Or use k-os directly and pipe context to Codex
-k-os query "cryptography" | codex "explain these files"
+k-os query "how does authentication work"
 ```
 
-### Antigravity / Gemini CLI (Google)
+This returns file pointers — not document fragments. Example output:
+
+```
+Relevant files for: "how does authentication work"
+
+1. /home/user/my-project/src/auth/middleware.py
+   Why: authentication, middleware, token validation, session
+   Sections: AuthMiddleware; validate_token(); refresh_session()
+   Score: 14.2
+
+2. /home/user/my-project/docs/auth-flow.md
+   Why: authentication flow, OAuth, login sequence
+   Sections: Overview; OAuth2 Flow; Token Lifecycle
+   Score: 11.8
+
+3. /home/user/my-project/src/auth/models.py
+   Why: user model, credentials, password hashing
+   Sections: User; Session; hash_password()
+   Score: 8.3
+```
+
+You (or your AI agent) then read those files directly for full context.
+
+### Step 3: Use with an AI agent
+
+Knowledge OS integrates with AI coding assistants in two ways: a **slash command** (Claude Code) and **MCP tools** (all supported editors). Neither is automatic — you explicitly invoke them.
+
+---
+
+#### Claude Code
+
+The installer adds a `/k-os` slash command. You type it in Claude Code:
+
+```
+You:     /k-os query how does authentication work
+Claude:  (runs k-os, gets file pointers, reads the actual files, answers your question)
+```
+
+**Complete example session:**
+
+```
+You:     /k-os rebuild ~/my-project
+Claude:  Rebuilt. 142 files scanned, 156 objects indexed in 3.2s.
+
+You:     /k-os query what handles payment processing
+Claude:  Found 3 relevant files. Let me read them...
+         [reads src/payments/stripe.py, src/payments/models.py, docs/billing.md]
+         
+         Payment processing works like this: ...
+         (answer based on your actual code)
+
+You:     /k-os query how are database migrations structured
+Claude:  [reads the files k-os points to, gives you a complete answer]
+```
+
+The key insight: `/k-os query` tells Claude *which files matter*. Claude then reads those files and answers with full context — no information lost.
+
+---
+
+#### Cursor / Windsurf / Continue / Codex / Antigravity
+
+These editors use MCP (Model Context Protocol). The installer registers k-os as an MCP server, which exposes tools the AI *can* call — but **the AI doesn't call them automatically**. You need to ask it to:
+
+```
+You:     Use k-os to search for files about authentication
+AI:      (calls k-os-query tool, reads returned files, answers)
+```
+
+Or reference the tool explicitly:
+
+```
+You:     Call k-os-query with "payment processing"
+AI:      (calls the MCP tool, gets pointers, reads the files)
+```
+
+**MCP tools available:**
+
+| Tool | What it does |
+|------|-------------|
+| `k-os-query` | Search the knowledge base, returns file pointers |
+| `k-os-rebuild` | Re-index a folder from scratch |
+| `k-os-status` | Show how many files are indexed |
+
+---
+
+#### Terminal only (no AI agent)
+
+k-os works as a standalone CLI:
 
 ```bash
-# Same MCP integration — tools available automatically
-antigravity "what files in my project handle user authentication?"
+# Query and read the results yourself
+k-os query "database schema"
+
+# See which files are architectural hubs (most dependencies point to them)
+k-os hubs
+
+# Generate an interactive dependency graph you can open in a browser
+k-os graph
+k-os graph -o deps.html
+
+# Check index status
+k-os status
 ```
 
-### Terminal-only usage (no AI agent)
+### Keeping the Index Fresh
 
-k-os works standalone as a CLI tool:
+You don't need to manually re-run `rebuild` after every file change:
+
+- **Auto-update on query** — every `k-os query` checks all previously rebuilt folders for changes. If files were added or modified, they're compiled and indexed before searching. If nothing changed, this adds ~0.4s.
+- **Git post-commit hook** — run `k-os install --hook` in any git repo. After each commit, changed files are indexed in the background.
+
+Both use SHA-256 change detection and only reprocess what actually changed.
+
+### CLI Reference
 
 ```bash
-# Search and get file pointers printed to terminal
-k-os query "how does the build system work"
-
-# Output shows:
-#   /path/to/Makefile — matched: build, compile, target — score: 12.3
-#   /path/to/docs/building.md — matched: build system, dependencies — score: 9.1
-
-# Then read those files yourself, or feed them to any tool
-cat $(k-os query "build system" --paths-only)
+k-os -w <path> rebuild -v        # Index a folder (full rebuild)
+k-os -w <path> update -v         # Index only new/changed files
+k-os query "question"            # Search across all indexed folders
+k-os hubs                        # Show most-connected files
+k-os graph                       # Generate interactive dependency graph
+k-os status                      # Show index statistics
+k-os install --hook              # Install git post-commit hook
+k-os install --mcp               # Show MCP config for manual setup
 ```
-
-### Manual MCP setup (if auto-detection missed your tool)
-
-```bash
-# Show the MCP configuration JSON to add manually
-k-os install --mcp
-```
-
-Add the output to your AI tool's MCP config file:
-- Claude Code: `~/.claude/settings.json` under `mcpServers`
-- Cursor: `~/.cursor/mcp.json` under `mcpServers`
-- Windsurf: `~/.codeium/windsurf/mcp_config.json` under `mcpServers`
-- Continue: `~/.continue/config.json` under `mcpServers`
-- Codex: `~/.codex/config.toml` under `[mcp_servers.knowledge-os]`
-- Antigravity: `~/.gemini/config/mcp_config.json` under `mcpServers`
-
-### Output Adapters
-
-Output format is auto-detected based on which AI CLI is active. Manual override:
-
-```bash
-k-os query "your question" -m claude    # Format for Claude Code
-k-os query "your question" -m codex     # Format for Codex
-k-os query "your question" -m gemini    # Format for Gemini
-```
-
-| Adapter | Auto-detected when |
-|---------|-------------------|
-| Claude | `CLAUDE_CODE` or `CLAUDE_ACCESS_TOKEN` env var present |
-| Codex | `OPENAI_API_KEY` env var present |
-| Gemini | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var present |
-| Qwen | `DASHSCOPE_API_KEY` env var present |
-| GPT | Default fallback |
-
-Knowledge OS does not call any external APIs or language models. Adapters only control output formatting.
 
 ## Architecture
 
