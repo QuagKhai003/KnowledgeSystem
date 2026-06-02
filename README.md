@@ -247,134 +247,142 @@ The AI reads the raw files directly, preserving full context and eliminating com
 
 ## Usage
 
-### Step 1: Index a folder
+### Index a folder (one-time setup)
 
-Before you can query anything, you need to index at least one folder:
+Before using k-os with any AI agent, index the folders you want searchable:
 
 ```bash
 k-os -w ~/my-project rebuild -v
+k-os -w ~/lecture-notes rebuild -v
 ```
 
-This scans every file, compiles Knowledge Objects, and stores them in the index. You only need to do this once per folder — after that, the index stays fresh automatically (see [Keeping the Index Fresh](#keeping-the-index-fresh)).
-
-### Step 2: Query your knowledge base
-
-```bash
-k-os query "how does authentication work"
-```
-
-This returns file pointers — not document fragments. Example output:
-
-```
-Relevant files for: "how does authentication work"
-
-1. /home/user/my-project/src/auth/middleware.py
-   Why: authentication, middleware, token validation, session
-   Sections: AuthMiddleware; validate_token(); refresh_session()
-   Score: 14.2
-
-2. /home/user/my-project/docs/auth-flow.md
-   Why: authentication flow, OAuth, login sequence
-   Sections: Overview; OAuth2 Flow; Token Lifecycle
-   Score: 11.8
-
-3. /home/user/my-project/src/auth/models.py
-   Why: user model, credentials, password hashing
-   Sections: User; Session; hash_password()
-   Score: 8.3
-```
-
-You (or your AI agent) then read those files directly for full context.
-
-### Step 3: Use with an AI agent
-
-Knowledge OS integrates with AI coding assistants in two ways: a **slash command** (Claude Code) and **MCP tools** (all supported editors). Neither is automatic — you explicitly invoke them.
+You only need to do this once per folder. After that, the index updates itself automatically whenever you query.
 
 ---
 
-#### Claude Code
+### Using with Claude Code
 
-The installer adds a `/k-os` slash command. You type it in Claude Code:
-
-```
-You:     /k-os query how does authentication work
-Claude:  (runs k-os, gets file pointers, reads the actual files, answers your question)
-```
-
-**Complete example session:**
+The installer adds a `/k-os` slash command to Claude Code. Here's what a real session looks like:
 
 ```
-You:     /k-os rebuild ~/my-project
-Claude:  Rebuilt. 142 files scanned, 156 objects indexed in 3.2s.
-
-You:     /k-os query what handles payment processing
-Claude:  Found 3 relevant files. Let me read them...
-         [reads src/payments/stripe.py, src/payments/models.py, docs/billing.md]
-         
-         Payment processing works like this: ...
-         (answer based on your actual code)
-
-You:     /k-os query how are database migrations structured
-Claude:  [reads the files k-os points to, gives you a complete answer]
+┌─────────────────────────────────────────────────────────────┐
+│ Claude Code                                                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ You:   /k-os query how does authentication work             │
+│                                                             │
+│ Claude: I found 3 relevant files. Let me read them.         │
+│                                                             │
+│         Reading src/auth/middleware.py...                    │
+│         Reading src/auth/models.py...                       │
+│         Reading docs/auth-flow.md...                        │
+│                                                             │
+│         Based on your codebase, authentication works        │
+│         through a middleware chain:                          │
+│                                                             │
+│         1. `AuthMiddleware` intercepts every request and     │
+│            validates the JWT token from the Authorization    │
+│            header (middleware.py:45)                         │
+│         2. Valid tokens are decoded into a `User` object     │
+│            (models.py:12) and attached to the request        │
+│         3. Token refresh is handled by...                    │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-The key insight: `/k-os query` tells Claude *which files matter*. Claude then reads those files and answers with full context — no information lost.
+What happened behind the scenes:
+1. You typed `/k-os query how does authentication work`
+2. Claude ran `k-os query` which returned file paths ranked by relevance
+3. Claude read those actual files from disk
+4. Claude answered using the full file contents — no information lost
+
+**More examples:**
+
+```
+/k-os query what handles payment processing
+/k-os query how are tests structured in this project
+/k-os query explain the database schema
+/k-os query what config files exist and what do they control
+```
+
+You can also rebuild from inside Claude Code:
+
+```
+/k-os rebuild ~/new-project
+```
 
 ---
 
-#### Cursor / Windsurf / Continue / Codex / Antigravity
+### Using with Cursor
 
-These editors use MCP (Model Context Protocol). The installer registers k-os as an MCP server, which exposes tools the AI *can* call — but **the AI doesn't call them automatically**. You need to ask it to:
-
-```
-You:     Use k-os to search for files about authentication
-AI:      (calls k-os-query tool, reads returned files, answers)
-```
-
-Or reference the tool explicitly:
+The installer registers k-os as an MCP server. In Cursor's AI chat panel:
 
 ```
-You:     Call k-os-query with "payment processing"
-AI:      (calls the MCP tool, gets pointers, reads the files)
+┌─────────────────────────────────────────────────────────────┐
+│ Cursor Chat                                                 │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ You:   @k-os-query how is the API rate limiting implemented │
+│                                                             │
+│ AI:    [Calling tool: k-os-query]                           │
+│                                                             │
+│        Based on the knowledge base results, rate limiting   │
+│        is implemented in src/middleware/rate_limiter.py      │
+│        using a sliding window algorithm...                  │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-**MCP tools available:**
+You invoke the tool by mentioning it with `@` or asking the AI to use it:
+
+```
+Use k-os to find files about database migrations
+Search my knowledge base for authentication docs
+@k-os-query payment processing flow
+```
+
+---
+
+### Using with Windsurf / Continue / Codex CLI / Antigravity
+
+Same MCP integration as Cursor. The installer configures each automatically. Use the `k-os-query` tool by asking the AI to search your knowledge base:
+
+```
+You:   Search k-os for how the build system works
+AI:    [Calls k-os-query tool, reads results, answers with full context]
+```
+
+**MCP tools available in all editors:**
 
 | Tool | What it does |
 |------|-------------|
-| `k-os-query` | Search the knowledge base, returns file pointers |
+| `k-os-query` | Search your indexed folders, returns relevant file paths |
 | `k-os-rebuild` | Re-index a folder from scratch |
 | `k-os-status` | Show how many files are indexed |
 
+If the MCP tools don't appear in your editor, run `k-os install --mcp` to see the configuration JSON and add it manually to your editor's MCP config.
+
 ---
 
-#### Terminal only (no AI agent)
+### Using as a standalone CLI (no AI agent)
 
-k-os works as a standalone CLI:
+k-os also works directly in the terminal:
 
 ```bash
-# Query and read the results yourself
-k-os query "database schema"
-
-# See which files are architectural hubs (most dependencies point to them)
-k-os hubs
-
-# Generate an interactive dependency graph you can open in a browser
-k-os graph
-k-os graph -o deps.html
-
-# Check index status
-k-os status
+k-os query "database schema"         # Search and print file pointers
+k-os hubs                            # Show most-connected files (architectural hubs)
+k-os graph                           # Generate interactive dependency graph (HTML)
+k-os status                          # Show index statistics
 ```
+
+---
 
 ### Keeping the Index Fresh
 
 You don't need to manually re-run `rebuild` after every file change:
 
-- **Auto-update on query** — every `k-os query` checks all previously rebuilt folders for changes. If files were added or modified, they're compiled and indexed before searching. If nothing changed, this adds ~0.4s.
+- **Auto-update on query** — every query checks all previously indexed folders for changes. New or modified files are compiled and indexed before searching. If nothing changed, this adds ~0.4s.
 - **Git post-commit hook** — run `k-os install --hook` in any git repo. After each commit, changed files are indexed in the background.
-
-Both use SHA-256 change detection and only reprocess what actually changed.
 
 ### CLI Reference
 
