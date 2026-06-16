@@ -291,18 +291,35 @@ class KnowledgePipeline:
         return store_dir / "knowledge_store.db"
 
     def _extract_matched_terms(self, query: str, result: dict, ko: dict) -> str:
-        """Find which terms from the result matched the query context."""
-        query_words = set(query.lower().split())
+        """Report which query terms actually hit this result.
+
+        Reports genuine overlap between the query and the document's keywords,
+        name, and section headings. Does NOT fall back to unrelated keywords —
+        if the only hit is in body text, say so rather than imply a match that
+        is not there.
+        """
+        import re
+
+        def words(text: str) -> set:
+            return set(re.findall(r"[a-z0-9]+", (text or "").lower()))
+
+        query_words = words(query)
+
         keywords = result.get("keywords", "") or ko.get("level_3", "")
         keyword_list = [k.strip() for k in keywords.split(";") if k.strip()]
 
-        matched = []
-        for kw in keyword_list:
-            kw_words = set(kw.lower().split())
-            if kw_words & query_words:
-                matched.append(kw)
+        # Keyword phrases that share a word with the query
+        matched = [kw for kw in keyword_list if words(kw) & query_words]
 
-        if not matched:
-            matched = keyword_list[:5]
+        # Plus any query word appearing in the name or section headings
+        surface = words(result.get("name", "")) | words(result.get("sections", ""))
+        overlap = sorted(query_words & surface)
 
-        return ", ".join(matched[:8])
+        terms = []
+        for t in matched + overlap:
+            if t not in terms:
+                terms.append(t)
+
+        if not terms:
+            return "(matched in body text only)"
+        return ", ".join(terms[:8])
