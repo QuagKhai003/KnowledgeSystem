@@ -227,17 +227,8 @@ if [ -d "$HOME/.gemini" ] || command -v antigravity &> /dev/null || [ -d "$HOME/
     configure_mcp "Antigravity" "$ANTIGRAVITY_MCP" "mcpServers.knowledge-os"
 fi
 
-# 5. Set up Python virtual environment and install dependencies
-if [ ! -d "${INSTALL_DIR}/.venv" ]; then
-    echo "Setting up Python venv..."
-    python3 -m venv "${INSTALL_DIR}/.venv"
-fi
-echo "Installing dependencies (this can take a few minutes; pip output below)..."
-"${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" || \
-    "${INSTALL_DIR}/.venv/bin/pip" install pyyaml
-echo "Virtual environment ready"
-
-# 6. Optional: Docker databases for semantic search + graph traversal
+# 5. Decide on the Docker tier BEFORE any long-running step, so that buffered
+# keystrokes during dependency install cannot accidentally skip the prompt.
 # Honour $KOS_DOCKER for non-interactive installs (1/yes/true = on); otherwise ask.
 COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
 WANT_DOCKER=""
@@ -256,7 +247,7 @@ if [ -z "$WANT_DOCKER" ]; then
     if ! command -v docker &> /dev/null; then
         echo "  Docker was not found on PATH; choosing yes will tell you how to add it later."
     fi
-    # Read from the terminal even when the script is piped via curl | bash
+    # Read from the terminal even when the script is piped via curl | bash.
     if [ -r /dev/tty ]; then
         printf "Install the Docker database tier? [y/N] "
         read -r answer < /dev/tty || answer=""
@@ -266,6 +257,17 @@ if [ -z "$WANT_DOCKER" ]; then
     case "$answer" in y|Y|yes|YES) WANT_DOCKER="yes" ;; *) WANT_DOCKER="no" ;; esac
 fi
 
+# 6. Set up Python virtual environment and install dependencies
+if [ ! -d "${INSTALL_DIR}/.venv" ]; then
+    echo "Setting up Python venv..."
+    python3 -m venv "${INSTALL_DIR}/.venv"
+fi
+echo "Installing dependencies (this can take a few minutes; pip output below)..."
+"${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" || \
+    "${INSTALL_DIR}/.venv/bin/pip" install pyyaml
+echo "Virtual environment ready"
+
+# 7. Act on the Docker choice made earlier (start containers if requested)
 DOCKER_ACTIVE="no"
 if [ "$WANT_DOCKER" = "yes" ]; then
     echo ""
