@@ -208,23 +208,9 @@ if ((Test-Path "$env:USERPROFILE\.gemini") -or ($null -ne (Get-Command antigravi
     Configure-MCP "Antigravity" "$env:USERPROFILE\.gemini\config\mcp_config.json" "mcpServers.knowledge-os"
 }
 
-# 5. Set up Python virtual environment and install dependencies
-if (-not (Test-Path "$INSTALL_DIR\.venv")) {
-    Write-Host "Setting up Python venv..."
-    python -m venv "$INSTALL_DIR\.venv"
-}
-Write-Host "Installing dependencies (this can take a few minutes; pip output below)..."
-$pipPath = "$INSTALL_DIR\.venv\Scripts\pip.exe"
-if (Test-Path "$INSTALL_DIR\requirements.txt") {
-    & $pipPath install -r "$INSTALL_DIR\requirements.txt"
-} else {
-    & $pipPath install pyyaml
-}
-Write-Host "Virtual environment ready" -ForegroundColor Green
-
-# 6. Optional: Docker databases for semantic search + graph traversal
-# Decide whether the user wants the Docker tier. Honour $env:KOS_DOCKER for
-# non-interactive installs (1/yes/true = on, 0/no/false = off); otherwise ask.
+# 5. Decide on the Docker tier BEFORE any long-running step, so that buffered
+# keystrokes during dependency install cannot accidentally skip the prompt.
+# Honour $env:KOS_DOCKER for non-interactive installs (1/yes/true = on).
 $wantDocker = $null
 if ($env:KOS_DOCKER) {
     $wantDocker = $env:KOS_DOCKER -match '^(1|y|yes|true|on)$'
@@ -240,10 +226,27 @@ if ($null -eq $wantDocker) {
     if (-not $dockerCli) {
         Write-Host "  Docker was not found on PATH; choosing Yes will tell you how to add it later." -ForegroundColor Yellow
     }
+    # Drop any stray buffered keystrokes so they cannot auto-answer the prompt
+    try { $Host.UI.RawUI.FlushInputBuffer() } catch {}
     $answer = Read-Host "Install the Docker database tier? [y/N]"
     $wantDocker = $answer -match '^(y|yes)$'
 }
 
+# 6. Set up Python virtual environment and install dependencies
+if (-not (Test-Path "$INSTALL_DIR\.venv")) {
+    Write-Host "Setting up Python venv..."
+    python -m venv "$INSTALL_DIR\.venv"
+}
+Write-Host "Installing dependencies (this can take a few minutes; pip output below)..."
+$pipPath = "$INSTALL_DIR\.venv\Scripts\pip.exe"
+if (Test-Path "$INSTALL_DIR\requirements.txt") {
+    & $pipPath install -r "$INSTALL_DIR\requirements.txt"
+} else {
+    & $pipPath install pyyaml
+}
+Write-Host "Virtual environment ready" -ForegroundColor Green
+
+# 7. Act on the Docker choice made earlier (start containers if requested)
 $dockerActive = $false
 if ($wantDocker) {
     Write-Host ""
@@ -275,7 +278,7 @@ if ($wantDocker) {
     Write-Host "    docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
 }
 
-# 7. Write the install manifest so `uninstall` can reverse everything in one command
+# 8. Write the install manifest so `uninstall` can reverse everything in one command
 $manifest = [PSCustomObject]@{
     version       = $KOS_VERSION
     installed_at  = (Get-Date).ToString("o")
