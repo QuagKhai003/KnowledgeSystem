@@ -86,19 +86,30 @@ function Configure-MCP {
     }
 
     if (Test-Path $ConfigFile) {
-        $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+        $raw = Get-Content $ConfigFile -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            $cfg = [PSCustomObject]@{}
+        } else {
+            $cfg = $raw | ConvertFrom-Json
+        }
     } else {
         $cfg = [PSCustomObject]@{}
     }
+    if ($null -eq $cfg) { $cfg = [PSCustomObject]@{} }
 
     $keys = $KeyPath -split '\.'
     $obj = $cfg
     for ($i = 0; $i -lt $keys.Count - 1; $i++) {
         $k = $keys[$i]
-        if (-not ($obj.PSObject.Properties.Name -contains $k)) {
-            $obj | Add-Member -NotePropertyName $k -NotePropertyValue ([PSCustomObject]@{})
+        $prop = $obj.PSObject.Properties[$k]
+        if ($null -eq $prop -or $null -eq $prop.Value) {
+            $child = [PSCustomObject]@{}
+            if ($null -ne $prop) { $obj.PSObject.Properties.Remove($k) }
+            $obj | Add-Member -NotePropertyName $k -NotePropertyValue $child
+            $obj = $child
+        } else {
+            $obj = $obj.$k
         }
-        $obj = $obj.$k
     }
     $lastKey = $keys[-1]
     if ($obj.PSObject.Properties.Name -contains $lastKey) {
