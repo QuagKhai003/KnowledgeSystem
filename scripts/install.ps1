@@ -1,4 +1,4 @@
-# Knowledge OS — global installer for Windows (PowerShell 5.1+)
+# Knowledge OS - global installer for Windows (PowerShell 5.1+)
 
 $KOS_VERSION = "0.1.0"
 $CONFIG_DIR = "$env:USERPROFILE\.k-os"
@@ -54,7 +54,7 @@ if (-not (Test-Path $BIN_DIR)) {
 $LAUNCHER = "$BIN_DIR\k-os.cmd"
 @"
 @echo off
-REM Knowledge OS global launcher — installed by install.ps1
+REM Knowledge OS global launcher - installed by install.ps1
 set INSTALL_DIR=$INSTALL_DIR
 if exist "%INSTALL_DIR%\.venv\Scripts\python.exe" (
     "%INSTALL_DIR%\.venv\Scripts\python.exe" "%INSTALL_DIR%\k-os" %*
@@ -129,7 +129,7 @@ function Configure-MCP {
 
 Write-Host "Configuring AI CLI integrations..."
 
-# Claude Code — slash command
+# Claude Code - slash command
 $CLAUDE_CMD_DIR = "$env:USERPROFILE\.claude\commands"
 if (-not (Test-Path $CLAUDE_CMD_DIR)) {
     New-Item -ItemType Directory -Path $CLAUDE_CMD_DIR -Force | Out-Null
@@ -157,27 +157,27 @@ Show the results to the user. If databases aren't running, suggest: ``docker com
 [void]$script:MANIFEST_FILES.Add("$CLAUDE_CMD_DIR\k-os.md")
 Write-Host "  Claude Code: /k-os slash command installed"
 
-# Claude Code — MCP server
+# Claude Code - MCP server
 if (Test-Path "$env:USERPROFILE\.claude") {
     Configure-MCP "Claude Code MCP" "$env:USERPROFILE\.claude\settings.json" "mcpServers.knowledge-os"
 }
 
-# Cursor — MCP server
+# Cursor - MCP server
 if ((Test-Path "$env:USERPROFILE\.cursor") -or ($null -ne (Get-Command cursor -ErrorAction SilentlyContinue))) {
     Configure-MCP "Cursor" "$env:USERPROFILE\.cursor\mcp.json" "mcpServers.knowledge-os"
 }
 
-# Windsurf — MCP server
+# Windsurf - MCP server
 if ((Test-Path "$env:USERPROFILE\.codeium\windsurf") -or ($null -ne (Get-Command windsurf -ErrorAction SilentlyContinue))) {
     Configure-MCP "Windsurf" "$env:USERPROFILE\.codeium\windsurf\mcp_config.json" "mcpServers.knowledge-os"
 }
 
-# VS Code + Continue — MCP server
+# VS Code + Continue - MCP server
 if (Test-Path "$env:USERPROFILE\.continue") {
     Configure-MCP "Continue" "$env:USERPROFILE\.continue\config.json" "mcpServers.knowledge-os"
 }
 
-# Codex CLI (OpenAI) — TOML config
+# Codex CLI (OpenAI) - TOML config
 $CODEX_CONFIG = "$env:USERPROFILE\.codex\config.toml"
 if ((Test-Path "$env:USERPROFILE\.codex") -or ($null -ne (Get-Command codex -ErrorAction SilentlyContinue))) {
     if (-not (Test-Path "$env:USERPROFILE\.codex")) {
@@ -203,7 +203,7 @@ args = ["$MCP_SCRIPT"]
     }
 }
 
-# Antigravity (Google/Gemini CLI) — MCP server
+# Antigravity (Google/Gemini CLI) - MCP server
 if ((Test-Path "$env:USERPROFILE\.gemini") -or ($null -ne (Get-Command antigravity -ErrorAction SilentlyContinue)) -or (Test-Path "$env:USERPROFILE\.antigravitycli")) {
     Configure-MCP "Antigravity" "$env:USERPROFILE\.gemini\config\mcp_config.json" "mcpServers.knowledge-os"
 }
@@ -310,7 +310,7 @@ Write-Host "  Antigravity:   uses k-os tools automatically (MCP)"
 
 if ($wantDocker) {
     Write-Host ""
-    Write-Host "Docker tier — managing the databases:" -ForegroundColor Cyan
+    Write-Host "Docker tier - managing the databases:" -ForegroundColor Cyan
     Write-Host "  Start:  docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
     Write-Host "  Stop:   docker compose -f $INSTALL_DIR\docker\docker-compose.yml down"
     Write-Host "  Status: docker ps"

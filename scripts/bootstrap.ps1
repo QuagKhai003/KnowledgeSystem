@@ -1,4 +1,4 @@
-# Knowledge OS — one-line installer for Windows
+# Knowledge OS - one-line installer for Windows
 # Usage: irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
 
 $KOS_HOME = "$env:USERPROFILE\.k-os"

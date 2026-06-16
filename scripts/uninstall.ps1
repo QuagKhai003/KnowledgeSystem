@@ -1,4 +1,4 @@
-# Knowledge OS — one-command uninstaller for Windows (PowerShell 5.1+)
+# Knowledge OS - one-command uninstaller for Windows (PowerShell 5.1+)
 # Usage: irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/uninstall.ps1 | iex
 #
 # Reads the install manifest written at install time and reverses every change:
