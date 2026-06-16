@@ -34,12 +34,12 @@ Docker is **not required**. The core system (keyword search, indexing, auto-upda
 
 ### Installation
 
-#### Option A: Without Docker (default — works immediately)
+One command installs everything. During install it asks a single question — **do you want the Docker database tier?** Answer No (the default) for the core install that works everywhere, or Yes to also start Qdrant + Neo4j. You can add Docker later at any time.
 
 **macOS / Linux / WSL / Git Bash:**
 
 ```bash
-# 1. Run the one-line installer
+# 1. Run the one-line installer (it will ask about Docker)
 curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash
 
 # 2. Restart your terminal (or source your shell profile)
@@ -48,17 +48,15 @@ source ~/.bashrc   # or: source ~/.zshrc
 # 3. Verify installation
 k-os status
 
-# 4. Index your first folder
+# 4. Index your first folder, then query
 k-os -w /path/to/your/folder rebuild -v
-
-# 5. Query your knowledge base
 k-os query "your question here"
 ```
 
 **Windows (PowerShell 5.1+):**
 
 ```powershell
-# 1. Run the one-line installer
+# 1. Run the one-line installer (it will ask about Docker)
 irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
 
 # 2. Restart your terminal (PATH update takes effect)
@@ -66,81 +64,44 @@ irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts
 # 3. Verify installation
 k-os status
 
-# 4. Index your first folder
+# 4. Index your first folder, then query
 k-os -w C:\path\to\your\folder rebuild -v
-
-# 5. Query your knowledge base
 k-os query "your question here"
+```
+
+**Non-interactive install** (skip the prompt — useful for scripts/CI). Set `KOS_DOCKER` before running:
+
+```bash
+KOS_DOCKER=1 curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash   # 1 = with Docker, 0 = core only
+```
+
+```powershell
+$env:KOS_DOCKER=1; irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex   # 1 = with Docker, 0 = core only
 ```
 
 **What the installer does:**
 1. Clones the repository to `~/.k-os/KnowledgeSystem`
-2. Creates a Python virtual environment and installs dependencies
+2. Creates a Python virtual environment and installs dependencies (pip output is shown so you can see progress)
 3. Registers the `k-os` command globally (`~/.local/bin/k-os` on Unix, `~/.k-os/bin/k-os.cmd` on Windows)
 4. Configures AI CLI integrations (Claude Code slash command + MCP servers for Cursor, Windsurf, Continue, Codex, Antigravity)
+5. If you chose Docker and the daemon is running, starts Qdrant + Neo4j and prints the commands to manage them
+6. Writes an install manifest (`~/.k-os/install-manifest.json`) so the whole thing can be removed with one command later
 
-This gives you the full pipeline: scan, compile, index, query, hubs, graph, git hooks, and all AI CLI integrations.
-
----
-
-#### Option B: With Docker (adds semantic search + graph traversal)
-
-**macOS / Linux / WSL / Git Bash:**
-
-```bash
-# 1. Ensure Docker is running
-docker info
-
-# 2. Run the one-line installer (auto-detects Docker and starts containers)
-curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.sh | bash
-
-# 3. Restart your terminal
-source ~/.bashrc   # or: source ~/.zshrc
-
-# 4. Verify everything is running
-k-os status
-docker ps   # Should show qdrant and neo4j containers
-
-# 5. Index and query
-k-os -w /path/to/your/folder rebuild -v
-k-os query "your question here"
-```
-
-**Windows (PowerShell 5.1+):**
-
-```powershell
-# 1. Ensure Docker Desktop is running
-docker info
-
-# 2. Run the one-line installer (auto-detects Docker and starts containers)
-irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/bootstrap.ps1 | iex
-
-# 3. Restart your terminal
-
-# 4. Verify everything is running
-k-os status
-docker ps   # Should show qdrant and neo4j containers
-
-# 5. Index and query
-k-os -w C:\path\to\your\folder rebuild -v
-k-os query "your question here"
-```
+> **Windows tip:** if the console looks frozen during a long step, you've probably clicked inside the window and triggered *QuickEdit* select-mode, which pauses output. Press `Enter` or `Esc` to resume — it isn't actually stuck.
 
 **What Docker adds:**
-- **Qdrant** (vector database) — enables semantic search that finds conceptually similar files even when keywords don't match
-- **Neo4j** (graph database) — enables graph traversal queries to explore transitive dependencies
+- **Qdrant** (vector database) — semantic search that finds conceptually similar files even when keywords don't match
+- **Neo4j** (graph database) — graph traversal queries to explore transitive dependencies
 
-**Adding Docker later** (if you installed without it first):
+**Adding Docker later** (if you installed core-only first):
 
 ```bash
-# Start the containers
+# Start the containers (daemon must be running)
 docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d
 
-# Verify health
+# Verify health, then re-index to populate vector + graph stores
 curl -sf http://localhost:6333/healthz   # Qdrant
 curl -sf http://localhost:7474           # Neo4j
-
-# Re-index to populate vector and graph stores
 k-os -w /path/to/your/folder rebuild -v
 ```
 
@@ -453,47 +414,18 @@ docker/                 docker-compose.yml (Neo4j, Qdrant — ports configurable
 
 ## Uninstall
 
-### macOS / Linux / WSL
+One command removes everything. The installer wrote a manifest (`~/.k-os/install-manifest.json`) recording every path and config it touched, so the uninstaller reverses all of it automatically — Docker containers, the global CLI, the PATH entry, the Claude slash command, and the `knowledge-os` MCP entries in every editor config (other entries in those files are left untouched).
+
+**macOS / Linux / WSL / Git Bash:**
 
 ```bash
-# Stop and remove database containers
-docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml down -v
-
-# Remove global CLI
-rm -f ~/.local/bin/k-os
-
-# Remove all Knowledge OS data and configuration
-rm -rf ~/.k-os
-
-# Remove Claude Code slash command
-rm -f ~/.claude/commands/k-os.md
+curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/uninstall.sh | bash
 ```
 
-Remove the `knowledge-os` entry from any of the following MCP configuration files, if present:
-
-- `~/.claude/settings.json`
-- `~/.cursor/mcp.json`
-- `~/.codeium/windsurf/mcp_config.json`
-- `~/.continue/config.json`
-- `~/.codex/config.toml`
-- `~/.gemini/config/mcp_config.json`
-
-### Windows (PowerShell)
+**Windows (PowerShell 5.1+):**
 
 ```powershell
-# Stop and remove database containers
-docker compose -f "$env:USERPROFILE\.k-os\KnowledgeSystem\docker\docker-compose.yml" down -v
-
-# Remove all Knowledge OS data, configuration, and global CLI
-Remove-Item -Recurse -Force "$env:USERPROFILE\.k-os"
-
-# Remove from PATH
-$path = [Environment]::GetEnvironmentVariable("Path", "User")
-$path = ($path -split ";" | Where-Object { $_ -notlike "*\.k-os\bin*" }) -join ";"
-[Environment]::SetEnvironmentVariable("Path", $path, "User")
-
-# Remove Claude Code slash command
-Remove-Item -Force "$env:USERPROFILE\.claude\commands\k-os.md" -ErrorAction SilentlyContinue
+irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/uninstall.ps1 | iex
 ```
 
-Remove the `knowledge-os` entry from the same MCP configuration files listed above.
+That's it. Restart your terminal afterward to clear the PATH change. If you already deleted `~/.k-os` by hand, the uninstaller falls back to the default install locations.

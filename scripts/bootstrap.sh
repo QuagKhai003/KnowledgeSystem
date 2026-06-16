@@ -22,13 +22,7 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
-if ! command -v docker &> /dev/null; then
-    echo "NOTE: Docker not found — optional databases (semantic search, graph) will be skipped."
-    echo "  k-os works fully with keyword search (SQLite FTS5, built-in)."
-    echo "  To add semantic search later, install Docker and run:"
-    echo "    docker compose -f ~/.k-os/KnowledgeSystem/docker/docker-compose.yml up -d"
-    echo ""
-fi
+# Docker is optional and chosen during install (the installer will ask).
 
 # Clone or update repo
 if [ -d "$KOS_REPO" ]; then

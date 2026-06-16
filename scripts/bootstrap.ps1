@@ -19,13 +19,7 @@ if ($null -eq (Get-Command python -ErrorAction SilentlyContinue)) {
     exit 1
 }
 
-if ($null -eq (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host "NOTE: Docker not found - optional databases (semantic search, graph) will be skipped." -ForegroundColor Yellow
-    Write-Host "  k-os works fully with keyword search (SQLite FTS5, built-in)."
-    Write-Host "  To add semantic search later, install Docker and run:"
-    Write-Host "    docker compose -f $KOS_HOME\KnowledgeSystem\docker\docker-compose.yml up -d"
-    Write-Host ""
-}
+# Docker is optional and chosen during install (the installer will ask).
 
 # Clone or update repo
 if (Test-Path $KOS_REPO) {

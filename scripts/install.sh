@@ -81,12 +81,17 @@ PYTHON_BIN="${INSTALL_DIR}/.venv/bin/python"
 MCP_SCRIPT="${INSTALL_DIR}/src/mcp_server.py"
 MCP_ENTRY="{\"command\":\"${PYTHON_BIN}\",\"args\":[\"${MCP_SCRIPT}\"]}"
 
+# Track everything we touch so uninstall can reverse it cleanly
+MANIFEST_MCP=()    # "file|key_path|format" per edited config
+MANIFEST_FILES=()  # standalone files we created
+
 configure_mcp() {
     local name="$1"
     local config_file="$2"
     local key_path="$3"
 
     mkdir -p "$(dirname "$config_file")"
+    MANIFEST_MCP+=("${config_file}|${key_path}|json")
 
     if [ -f "$config_file" ]; then
         if command -v python3 &> /dev/null; then
@@ -169,6 +174,7 @@ CMDEOF
 
 sed -i.bak "s|\$INSTALL_DIR|${INSTALL_DIR}|g" "$CLAUDE_CMD_DIR/k-os.md"
 rm -f "$CLAUDE_CMD_DIR/k-os.md.bak"
+MANIFEST_FILES+=("$CLAUDE_CMD_DIR/k-os.md")
 echo "  Claude Code: /k-os slash command installed"
 
 # Claude Code — MCP server
@@ -210,6 +216,7 @@ enabled = true
 command = "${PYTHON_BIN}"
 args = ["${MCP_SCRIPT}"]
 EOF
+        MANIFEST_MCP+=("${CODEX_CONFIG}|mcp_servers.knowledge-os|toml")
         echo "  Codex CLI: configured"
     fi
 fi
@@ -225,29 +232,105 @@ if [ ! -d "${INSTALL_DIR}/.venv" ]; then
     echo "Setting up Python venv..."
     python3 -m venv "${INSTALL_DIR}/.venv"
 fi
-echo "Installing dependencies..."
-"${INSTALL_DIR}/.venv/bin/pip" install -q -r "${INSTALL_DIR}/requirements.txt" 2>/dev/null || \
-    "${INSTALL_DIR}/.venv/bin/pip" install -q pyyaml
+echo "Installing dependencies (this can take a few minutes; pip output below)..."
+"${INSTALL_DIR}/.venv/bin/pip" install -r "${INSTALL_DIR}/requirements.txt" || \
+    "${INSTALL_DIR}/.venv/bin/pip" install pyyaml
 echo "Virtual environment ready"
 
 # 6. Optional: Docker databases for semantic search + graph traversal
-if command -v docker &> /dev/null; then
-    echo ""
-    echo "Docker found. Starting optional databases (Qdrant + Neo4j)..."
-    docker compose -f "${INSTALL_DIR}/docker/docker-compose.yml" up -d
-    echo "Waiting for databases to be ready..."
-    sleep 15
+# Honour $KOS_DOCKER for non-interactive installs (1/yes/true = on); otherwise ask.
+COMPOSE_FILE="${INSTALL_DIR}/docker/docker-compose.yml"
+WANT_DOCKER=""
+if [ -n "${KOS_DOCKER:-}" ]; then
+    case "$KOS_DOCKER" in
+        1|y|Y|yes|YES|true|on) WANT_DOCKER="yes" ;;
+        *) WANT_DOCKER="no" ;;
+    esac
+fi
 
-    # Health checks
-    curl -sf http://localhost:6333/healthz > /dev/null 2>&1 && echo "  Qdrant: ready" || echo "  Qdrant: not ready yet (wait ~30s)"
-    curl -sf http://localhost:7474 > /dev/null 2>&1 && echo "  Neo4j: ready" || echo "  Neo4j: not ready yet (wait ~30s)"
+if [ -z "$WANT_DOCKER" ]; then
+    echo ""
+    echo "Knowledge OS has two tiers:"
+    echo "  Core (no Docker)  - keyword search, hubs, graph, auto-index. Works everywhere."
+    echo "  + Docker          - adds semantic vector search (Qdrant) and graph traversal (Neo4j)."
+    if ! command -v docker &> /dev/null; then
+        echo "  Docker was not found on PATH; choosing yes will tell you how to add it later."
+    fi
+    # Read from the terminal even when the script is piped via curl | bash
+    if [ -r /dev/tty ]; then
+        printf "Install the Docker database tier? [y/N] "
+        read -r answer < /dev/tty || answer=""
+    else
+        answer=""
+    fi
+    case "$answer" in y|Y|yes|YES) WANT_DOCKER="yes" ;; *) WANT_DOCKER="no" ;; esac
+fi
+
+DOCKER_ACTIVE="no"
+if [ "$WANT_DOCKER" = "yes" ]; then
+    echo ""
+    if ! command -v docker &> /dev/null; then
+        echo "Docker not installed. Skipping container startup."
+        echo "  Install Docker, then run:"
+        echo "    docker compose -f ${COMPOSE_FILE} up -d"
+    elif ! docker info &> /dev/null; then
+        echo "Docker is installed but the daemon is not running."
+        echo "  Start Docker, then run:"
+        echo "    docker compose -f ${COMPOSE_FILE} up -d"
+    else
+        echo "Starting databases (Qdrant + Neo4j)..."
+        docker compose -f "$COMPOSE_FILE" up -d
+        echo "Waiting for databases to be ready..."
+        sleep 15
+        curl -sf http://localhost:6333/healthz > /dev/null 2>&1 && echo "  Qdrant: ready" || echo "  Qdrant: not ready yet (wait ~30s)"
+        curl -sf http://localhost:7474 > /dev/null 2>&1 && echo "  Neo4j: ready" || echo "  Neo4j: not ready yet (wait ~30s)"
+        DOCKER_ACTIVE="yes"
+    fi
 else
     echo ""
-    echo "Docker not found — skipping optional databases."
-    echo "  k-os works fully with keyword search (SQLite FTS5, built-in)."
-    echo "  For semantic search + graph traversal, install Docker and run:"
-    echo "    docker compose -f ${INSTALL_DIR}/docker/docker-compose.yml up -d"
+    echo "Core install (no Docker). Keyword search is fully enabled."
+    echo "  To add semantic search + graph traversal later, run:"
+    echo "    docker compose -f ${COMPOSE_FILE} up -d"
 fi
+
+# 7. Write the install manifest so `uninstall` can reverse everything in one command
+DOCKER_BOOL="false"; [ "$WANT_DOCKER" = "yes" ] && DOCKER_BOOL="true"
+MANIFEST_FILE="$CONFIG_DIR/install-manifest.json"
+{
+    printf '{\n'
+    printf '  "version": "%s",\n' "$KOS_VERSION"
+    printf '  "installed_at": "%s",\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf '  "os": "unix",\n'
+    printf '  "kos_home": "%s",\n' "$CONFIG_DIR"
+    printf '  "config_file": "%s",\n' "$CONFIG_FILE"
+    printf '  "launcher": "%s",\n' "$LAUNCHER"
+    printf '  "path_entry": "%s",\n' "$BIN_DIR"
+    printf '  "claude_command": "%s",\n' "$CLAUDE_CMD_DIR/k-os.md"
+    printf '  "docker": %s,\n' "$DOCKER_BOOL"
+    printf '  "compose_file": "%s",\n' "$COMPOSE_FILE"
+    printf '  "files": ['
+    if [ "${#MANIFEST_FILES[@]}" -gt 0 ]; then
+        first=1
+        for f in "${MANIFEST_FILES[@]}"; do
+            [ "$first" -eq 0 ] && printf ', '
+            printf '"%s"' "$f"
+            first=0
+        done
+    fi
+    printf '],\n'
+    printf '  "mcp_edits": ['
+    if [ "${#MANIFEST_MCP[@]}" -gt 0 ]; then
+        first=1
+        for entry in "${MANIFEST_MCP[@]}"; do
+            f="${entry%%|*}"; rest="${entry#*|}"; kp="${rest%%|*}"; fmt="${rest##*|}"
+            [ "$first" -eq 0 ] && printf ', '
+            printf '{"file": "%s", "key_path": "%s", "format": "%s"}' "$f" "$kp" "$fmt"
+            first=0
+        done
+    fi
+    printf ']\n'
+    printf '}\n'
+} > "$MANIFEST_FILE"
 
 echo ""
 echo "=== Installation complete ==="
@@ -263,5 +346,22 @@ echo "  Windsurf:      uses k-os tools automatically (MCP)"
 echo "  Continue:      uses k-os tools automatically (MCP)"
 echo "  Codex CLI:     uses k-os tools automatically (MCP)"
 echo "  Antigravity:   uses k-os tools automatically (MCP)"
+
+if [ "$WANT_DOCKER" = "yes" ]; then
+    echo ""
+    echo "Docker tier — managing the databases:"
+    echo "  Start:  docker compose -f ${COMPOSE_FILE} up -d"
+    echo "  Stop:   docker compose -f ${COMPOSE_FILE} down"
+    echo "  Status: docker ps"
+    echo "  Qdrant UI: http://localhost:6333/dashboard   Neo4j UI: http://localhost:7474"
+    if [ "$DOCKER_ACTIVE" = "yes" ]; then
+        echo "  Containers are running now. Re-index a folder to populate them:"
+    else
+        echo "  Start Docker, run the 'Start' command above, then re-index a folder:"
+    fi
+    echo "    k-os -w /path/to/vault rebuild -v"
+fi
+
 echo ""
-echo "Config: $CONFIG_FILE"
+echo "Config:    $CONFIG_FILE"
+echo "Uninstall: curl -fsSL https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/uninstall.sh | bash"
