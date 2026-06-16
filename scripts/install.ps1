@@ -24,9 +24,13 @@ if (-not (Test-Path $CONFIG_DIR)) {
 }
 
 # 2. Write global config
+# Note: install_dir is single-quoted. Windows paths contain backslashes, and
+# YAML double-quoted scalars treat "\U", "\." etc. as escape sequences, which
+# breaks the parser. Single-quoted YAML scalars do no escape processing.
+# Files are written as ASCII (no BOM) so PyYAML never sees a mojibake BOM.
 if (-not (Test-Path $CONFIG_FILE)) {
     @"
-install_dir: "$INSTALL_DIR"
+install_dir: '$INSTALL_DIR'
 default_vault: ""
 databases:
   neo4j:
@@ -36,12 +40,13 @@ databases:
   qdrant:
     host: localhost
     port: 6333
-"@ | Set-Content -Path $CONFIG_FILE -Encoding UTF8
+"@ | Set-Content -Path $CONFIG_FILE -Encoding ASCII
     Write-Host "Created config: $CONFIG_FILE"
 } else {
     $content = Get-Content $CONFIG_FILE -Raw
-    $content = $content -replace 'install_dir:.*', "install_dir: `"$INSTALL_DIR`""
-    Set-Content -Path $CONFIG_FILE -Value $content -Encoding UTF8
+    $content = $content.TrimStart([char]0xFEFF)   # strip any pre-existing BOM
+    $content = $content -replace "install_dir:.*", "install_dir: '$INSTALL_DIR'"
+    Set-Content -Path $CONFIG_FILE -Value $content -Encoding ASCII
     Write-Host "Updated config: $CONFIG_FILE"
 }
 

@@ -25,9 +25,11 @@ echo "Install dir: $INSTALL_DIR"
 mkdir -p "$CONFIG_DIR"
 
 # 2. Write global config (preserve existing)
+# install_dir is single-quoted: YAML double-quoted scalars process backslash
+# escapes (a problem for Windows paths), single-quoted scalars do not.
 if [ ! -f "$CONFIG_FILE" ]; then
     cat > "$CONFIG_FILE" << EOF
-install_dir: "${INSTALL_DIR}"
+install_dir: '${INSTALL_DIR}'
 default_vault: ""
 databases:
   neo4j:
@@ -41,7 +43,7 @@ EOF
     echo "Created config: $CONFIG_FILE"
 else
     # Update install_dir in existing config
-    sed -i.bak "s|^install_dir:.*|install_dir: \"${INSTALL_DIR}\"|" "$CONFIG_FILE"
+    sed -i.bak "s|^install_dir:.*|install_dir: '${INSTALL_DIR}'|" "$CONFIG_FILE"
     rm -f "${CONFIG_FILE}.bak"
     echo "Updated config: $CONFIG_FILE"
 fi

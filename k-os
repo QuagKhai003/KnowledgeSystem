@@ -47,7 +47,8 @@ def load_global_config() -> dict:
     if cache_path.exists() and cache_path.stat().st_mtime >= global_path.stat().st_mtime:
         return json.loads(cache_path.read_text())
     import yaml
-    data = yaml.safe_load(global_path.read_text()) or {}
+    # utf-8-sig strips a leading BOM if a Windows editor/installer wrote one
+    data = yaml.safe_load(global_path.read_text(encoding="utf-8-sig")) or {}
     cache_path.write_text(json.dumps(data))
     return data
 
@@ -62,7 +63,7 @@ def load_config(workspace: str | None = None) -> dict:
         config = json.loads(cache_path.read_text())
     else:
         import yaml
-        config = yaml.safe_load(config_path.read_text())
+        config = yaml.safe_load(config_path.read_text(encoding="utf-8-sig"))
         cache_path.write_text(json.dumps(config))
 
     if workspace:
