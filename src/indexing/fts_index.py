@@ -81,18 +81,45 @@ class FTSIndex:
         )
         self._conn.commit()
 
+    # Common English words that add noise to keyword search, plus query
+    # scaffolding ("what have I done..."). Filtered out before matching.
+    _STOPWORDS = {
+        "a", "an", "the", "of", "in", "on", "at", "to", "for", "with", "and",
+        "or", "is", "are", "was", "were", "be", "been", "am", "do", "does",
+        "did", "done", "have", "has", "had", "i", "you", "it", "this", "that",
+        "these", "those", "my", "me", "we", "us", "our", "what", "which",
+        "how", "when", "where", "who", "why", "as", "by", "from", "about",
+    }
+
+    def _query_tokens(self, query: str) -> list[str]:
+        tokens = []
+        for raw in query.lower().split():
+            term = "".join(ch for ch in raw if ch.isalnum())
+            if not term or term in self._STOPWORDS:
+                continue
+            # Drop single non-digit characters ("b", "x"); keep digits ("5")
+            if len(term) < 2 and not term.isdigit():
+                continue
+            tokens.append(term)
+        return tokens
+
     def search(self, query: str, limit: int = 10) -> list[dict]:
-        safe_query = " OR ".join(
-            f'"{term}"' for term in query.split() if term.strip()
-        )
+        tokens = self._query_tokens(query)
+        safe_query = " OR ".join(f'"{t}"' for t in tokens)
         if not safe_query:
             return []
 
+        # Column weights for bm25(). Order matches the fts5 table definition:
+        # object_id, name, content, tags, file_path, domain, sections, keywords.
+        # A filename / heading / keyword hit is far more telling than a single
+        # mention buried in body text, so content is weighted lowest.
+        weights = "0.0, 10.0, 1.0, 5.0, 8.0, 5.0, 6.0, 6.0"
+
         rows = self._conn.execute(
-            "SELECT object_id, name, file_path, domain, sections, keywords, "
-            "bm25(documents) as score "
-            "FROM documents WHERE documents MATCH ? "
-            "ORDER BY bm25(documents) LIMIT ?",
+            f"SELECT object_id, name, file_path, domain, sections, keywords, "
+            f"bm25(documents, {weights}) as score "
+            f"FROM documents WHERE documents MATCH ? "
+            f"ORDER BY bm25(documents, {weights}) LIMIT ?",
             (safe_query, limit),
         ).fetchall()
 
