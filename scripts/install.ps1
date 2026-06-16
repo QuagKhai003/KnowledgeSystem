@@ -77,6 +77,10 @@ $PYTHON_BIN = "$INSTALL_DIR\.venv\Scripts\python.exe"
 $MCP_SCRIPT = "$INSTALL_DIR\src\mcp_server.py"
 $MCP_ENTRY = @{ command = $PYTHON_BIN; args = @($MCP_SCRIPT) }
 
+# Track everything we touch so uninstall can reverse it cleanly
+$script:MANIFEST_MCP = [System.Collections.ArrayList]::new()
+$script:MANIFEST_FILES = [System.Collections.ArrayList]::new()
+
 function Configure-MCP {
     param($Name, $ConfigFile, $KeyPath)
 
@@ -86,19 +90,30 @@ function Configure-MCP {
     }
 
     if (Test-Path $ConfigFile) {
-        $cfg = Get-Content $ConfigFile -Raw | ConvertFrom-Json
+        $raw = Get-Content $ConfigFile -Raw
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            $cfg = [PSCustomObject]@{}
+        } else {
+            $cfg = $raw | ConvertFrom-Json
+        }
     } else {
         $cfg = [PSCustomObject]@{}
     }
+    if ($null -eq $cfg) { $cfg = [PSCustomObject]@{} }
 
     $keys = $KeyPath -split '\.'
     $obj = $cfg
     for ($i = 0; $i -lt $keys.Count - 1; $i++) {
         $k = $keys[$i]
-        if (-not ($obj.PSObject.Properties.Name -contains $k)) {
-            $obj | Add-Member -NotePropertyName $k -NotePropertyValue ([PSCustomObject]@{})
+        $prop = $obj.PSObject.Properties[$k]
+        if ($null -eq $prop -or $null -eq $prop.Value) {
+            $child = [PSCustomObject]@{}
+            if ($null -ne $prop) { $obj.PSObject.Properties.Remove($k) }
+            $obj | Add-Member -NotePropertyName $k -NotePropertyValue $child
+            $obj = $child
+        } else {
+            $obj = $obj.$k
         }
-        $obj = $obj.$k
     }
     $lastKey = $keys[-1]
     if ($obj.PSObject.Properties.Name -contains $lastKey) {
@@ -108,6 +123,7 @@ function Configure-MCP {
     }
 
     $cfg | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigFile -Encoding UTF8
+    [void]$script:MANIFEST_MCP.Add([PSCustomObject]@{ file = $ConfigFile; key_path = $KeyPath; format = "json" })
     Write-Host "  ${Name}: configured"
 }
 
@@ -138,6 +154,7 @@ python $INSTALL_DIR\k-os query "`$ARGUMENTS" --live
 
 Show the results to the user. If databases aren't running, suggest: ``docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d``
 "@ | Set-Content -Path "$CLAUDE_CMD_DIR\k-os.md" -Encoding UTF8
+[void]$script:MANIFEST_FILES.Add("$CLAUDE_CMD_DIR\k-os.md")
 Write-Host "  Claude Code: /k-os slash command installed"
 
 # Claude Code — MCP server
@@ -179,6 +196,7 @@ command = "$PYTHON_BIN"
 args = ["$MCP_SCRIPT"]
 "@
         Add-Content -Path $CODEX_CONFIG -Value $tomlBlock
+        [void]$script:MANIFEST_MCP.Add([PSCustomObject]@{ file = $CODEX_CONFIG; key_path = "mcp_servers.knowledge-os"; format = "toml" })
         Write-Host "  Codex CLI: configured"
     } else {
         Write-Host "  Codex CLI: already configured"
@@ -195,33 +213,85 @@ if (-not (Test-Path "$INSTALL_DIR\.venv")) {
     Write-Host "Setting up Python venv..."
     python -m venv "$INSTALL_DIR\.venv"
 }
-Write-Host "Installing dependencies..."
+Write-Host "Installing dependencies (this can take a few minutes; pip output below)..."
 $pipPath = "$INSTALL_DIR\.venv\Scripts\pip.exe"
 if (Test-Path "$INSTALL_DIR\requirements.txt") {
-    & $pipPath install -q -r "$INSTALL_DIR\requirements.txt" 2>$null
+    & $pipPath install -r "$INSTALL_DIR\requirements.txt"
 } else {
-    & $pipPath install -q pyyaml
+    & $pipPath install pyyaml
 }
-Write-Host "Virtual environment ready"
+Write-Host "Virtual environment ready" -ForegroundColor Green
 
 # 6. Optional: Docker databases for semantic search + graph traversal
-if ($null -ne (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host ""
-    Write-Host "Docker found. Starting optional databases (Qdrant + Neo4j)..."
-    docker compose -f "$INSTALL_DIR\docker\docker-compose.yml" up -d
-    Write-Host "Waiting for databases to be ready..."
-    Start-Sleep -Seconds 15
+# Decide whether the user wants the Docker tier. Honour $env:KOS_DOCKER for
+# non-interactive installs (1/yes/true = on, 0/no/false = off); otherwise ask.
+$wantDocker = $null
+if ($env:KOS_DOCKER) {
+    $wantDocker = $env:KOS_DOCKER -match '^(1|y|yes|true|on)$'
+}
 
-    # Health checks
-    try { $null = Invoke-RestMethod -Uri "http://localhost:6333/healthz" -TimeoutSec 3; Write-Host "  Qdrant: ready" } catch { Write-Host "  Qdrant: not ready yet (wait ~30s)" }
-    try { $null = Invoke-RestMethod -Uri "http://localhost:7474" -TimeoutSec 3; Write-Host "  Neo4j: ready" } catch { Write-Host "  Neo4j: not ready yet (wait ~30s)" }
+$dockerCli = $null -ne (Get-Command docker -ErrorAction SilentlyContinue)
+
+if ($null -eq $wantDocker) {
+    Write-Host ""
+    Write-Host "Knowledge OS has two tiers:" -ForegroundColor Cyan
+    Write-Host "  Core (no Docker)  - keyword search, hubs, graph, auto-index. Works everywhere."
+    Write-Host "  + Docker          - adds semantic vector search (Qdrant) and graph traversal (Neo4j)."
+    if (-not $dockerCli) {
+        Write-Host "  Docker was not found on PATH; choosing Yes will tell you how to add it later." -ForegroundColor Yellow
+    }
+    $answer = Read-Host "Install the Docker database tier? [y/N]"
+    $wantDocker = $answer -match '^(y|yes)$'
+}
+
+$dockerActive = $false
+if ($wantDocker) {
+    Write-Host ""
+    if (-not $dockerCli) {
+        Write-Host "Docker not installed. Skipping container startup." -ForegroundColor Yellow
+        Write-Host "  Install Docker Desktop, then run:"
+        Write-Host "    docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
+    } else {
+        # Binary present != daemon running. Probe the daemon before compose.
+        docker info 2>$null | Out-Null
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Docker is installed but the daemon is not running." -ForegroundColor Yellow
+            Write-Host "  Start Docker Desktop, then run:"
+            Write-Host "    docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
+        } else {
+            Write-Host "Starting databases (Qdrant + Neo4j)..."
+            docker compose -f "$INSTALL_DIR\docker\docker-compose.yml" up -d
+            Write-Host "Waiting for databases to be ready..."
+            Start-Sleep -Seconds 15
+            try { $null = Invoke-RestMethod -Uri "http://localhost:6333/healthz" -TimeoutSec 3; Write-Host "  Qdrant: ready" -ForegroundColor Green } catch { Write-Host "  Qdrant: not ready yet (wait ~30s)" -ForegroundColor Yellow }
+            try { $null = Invoke-RestMethod -Uri "http://localhost:7474" -TimeoutSec 3; Write-Host "  Neo4j: ready" -ForegroundColor Green } catch { Write-Host "  Neo4j: not ready yet (wait ~30s)" -ForegroundColor Yellow }
+            $dockerActive = $true
+        }
+    }
 } else {
     Write-Host ""
-    Write-Host "Docker not found - skipping optional databases." -ForegroundColor Yellow
-    Write-Host "  k-os works fully with keyword search (SQLite FTS5, built-in)."
-    Write-Host "  For semantic search + graph traversal, install Docker and run:"
+    Write-Host "Core install (no Docker). Keyword search is fully enabled." -ForegroundColor Green
+    Write-Host "  To add semantic search + graph traversal later, run:"
     Write-Host "    docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
 }
+
+# 7. Write the install manifest so `uninstall` can reverse everything in one command
+$manifest = [PSCustomObject]@{
+    version       = $KOS_VERSION
+    installed_at  = (Get-Date).ToString("o")
+    os            = "windows"
+    kos_home      = $CONFIG_DIR
+    config_file   = $CONFIG_FILE
+    launcher      = $LAUNCHER
+    path_entry    = $BIN_DIR
+    claude_command = "$CLAUDE_CMD_DIR\k-os.md"
+    docker        = [bool]$wantDocker
+    compose_file  = "$INSTALL_DIR\docker\docker-compose.yml"
+    files         = @($script:MANIFEST_FILES)
+    mcp_edits     = @($script:MANIFEST_MCP)
+}
+$MANIFEST_FILE = "$CONFIG_DIR\install-manifest.json"
+$manifest | ConvertTo-Json -Depth 10 | Set-Content -Path $MANIFEST_FILE -Encoding UTF8
 
 Write-Host ""
 Write-Host "=== Installation complete ===" -ForegroundColor Green
@@ -237,7 +307,24 @@ Write-Host "  Windsurf:      uses k-os tools automatically (MCP)"
 Write-Host "  Continue:      uses k-os tools automatically (MCP)"
 Write-Host "  Codex CLI:     uses k-os tools automatically (MCP)"
 Write-Host "  Antigravity:   uses k-os tools automatically (MCP)"
+
+if ($wantDocker) {
+    Write-Host ""
+    Write-Host "Docker tier — managing the databases:" -ForegroundColor Cyan
+    Write-Host "  Start:  docker compose -f $INSTALL_DIR\docker\docker-compose.yml up -d"
+    Write-Host "  Stop:   docker compose -f $INSTALL_DIR\docker\docker-compose.yml down"
+    Write-Host "  Status: docker ps"
+    Write-Host "  Qdrant UI: http://localhost:6333/dashboard   Neo4j UI: http://localhost:7474"
+    if ($dockerActive) {
+        Write-Host "  Containers are running now. Re-index a folder to populate them:"
+    } else {
+        Write-Host "  Start Docker Desktop, run the 'Start' command above, then re-index a folder:"
+    }
+    Write-Host "    k-os -w C:\path\to\vault rebuild -v"
+}
+
 Write-Host ""
-Write-Host "Config: $CONFIG_FILE"
+Write-Host "Config:    $CONFIG_FILE"
+Write-Host "Uninstall: irm https://raw.githubusercontent.com/QuagKhai003/KnowledgeSystem/master/scripts/uninstall.ps1 | iex"
 Write-Host ""
 Write-Host "NOTE: Restart your terminal for PATH changes to take effect." -ForegroundColor Yellow
