@@ -205,7 +205,7 @@ class CompilerPipeline:
             name=file_name,
             source_file=file_path,
             abstractions=Abstraction(level_0=level_0, level_1=level_1, level_3=level_3),
-            ontology_class="Reference",
+            ontology_class="Concept",
             ontology_depth=3,
         )
 
